@@ -50,8 +50,7 @@ def compute_cov_mat(points):
 
 def preliminary_step(k, points):
     # 1. Calculate K preliminary centroids
-    # centroids = points.takeSample(False, k, 1)
-    centroids = np.array([(1.90, 0.97), (3.17, 4.96)])
+    centroids = points.takeSample(False, k)
     print("initial centroids")
     pprint(centroids)
 
@@ -72,7 +71,6 @@ def preliminary_step(k, points):
     centroids_new = point_stats.map(lambda st: (st[0], st[1][0] / st[1][1])).collect()
 
     # 2. Assign points to centroids
-    # assign points to centroids
     closest = points.map(lambda point: (euclidean_closest_point(point, centroids), (point[0], point[1])))
 
     # 3. Compute the Sk
@@ -96,22 +94,19 @@ def main(file, no_clusters, converge_dist):
     k = int(no_clusters)
     converge_dist = float(converge_dist)
 
-    # k_points = data.take_sample(False, k, 1)
-    # centroids = np.array([(1.90, 0.97), (3.17, 4.96)])
     centroids_delta_dist = 1.0
-
     centroids, sk = preliminary_step(k, data)
-    pprint(centroids)
-    # pprint(sk.collect())
-
+    iterations = 0
     while centroids_delta_dist > converge_dist:
+        # Compute new clusters with Mahalanobis and assign
         closest = data.map(lambda p: (closest_point(p, centroids, sk), (p, 1)))
-        pprint(centroids)
-        pprint(closest.collect())
         point_stats = closest.reduceByKey(lambda p1_c1, p2_c2: (p1_c1[0] + p2_c2[0], p1_c1[1] + p2_c2[1]))
+        # Compute new centroids
         new_points = point_stats.map(lambda st: (st[0], st[1][0] / st[1][1])).collect()
 
-        closest = data.map(lambda point: (euclidean_closest_point(point, centroids), (point[0], point[1])))
+        # Compute new covariance per cluster
+        # closest = data.map(lambda point: (euclidean_closest_point(point, centroids), (point[0], point[1])))
+        closest = data.map(lambda p: (closest_point(p, centroids, sk), (p[0], p[1])))
         grouped_by_cluster = closest.groupByKey().map(lambda x: (x[0], list(x[1])))
         sk = grouped_by_cluster.map(lambda r: (r[0], compute_cov_mat(r[1]))).collect()
 
@@ -120,7 +115,9 @@ def main(file, no_clusters, converge_dist):
         for (iK, p) in new_points:
             centroids[iK] = p
 
-    print("Final centroids:")
+        iterations += 1
+
+    print("Final centroids in {} iterations:".format(iterations))
     pprint(centroids)
     spark.stop()
 
