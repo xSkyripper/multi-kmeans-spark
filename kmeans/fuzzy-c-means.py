@@ -20,7 +20,7 @@ def euclidean_distance(point, centers):
     return best_index
 
 
-def initializeMembershipMatrix(n, k):
+def initialize_membership_matrix(n, k):
     membership_mat = list()
     for i in range(n):
         random_num_list = [random.random() for i in range(k)]
@@ -30,7 +30,7 @@ def initializeMembershipMatrix(n, k):
     return membership_mat
 
 
-def calculateClusterCenter(points, membership_mat, n, k, fuzzy_factor):
+def calculate_cluster_center(points, membership_mat, n, k, fuzzy_factor):
     cluster_mem_val = list(zip(*membership_mat))
     cluster_centers = list()
     for j in range(k):
@@ -48,7 +48,7 @@ def calculateClusterCenter(points, membership_mat, n, k, fuzzy_factor):
     return cluster_centers
 
 
-def updateMembershipValue(points, membership_mat, n, k, fuzzy_factor, cluster_centers):
+def update_membership_value(points, membership_mat, n, k, fuzzy_factor, cluster_centers):
     p = float(2/(fuzzy_factor-1))
     for i in range(n):
         x = list(points[i])
@@ -73,12 +73,12 @@ def main():
     curr = 0
     MAX_ITER = 100
     count_points = data.collect().__len__()
-    membership_mat = initializeMembershipMatrix(count_points, k)
+    membership_mat = initialize_membership_matrix(count_points, k)
     print(membership_mat)
     points = data.collect()
     while curr < MAX_ITER:
-        cluster_centers = calculateClusterCenter(points, membership_mat, count_points, k, 1.5)
-        membership_mat = updateMembershipValue(points, membership_mat,count_points, k, 1.5, cluster_centers)
+        cluster_centers = calculate_cluster_center(points, membership_mat, count_points, k, 1.5)
+        membership_mat = update_membership_value(points, membership_mat,count_points, k, 1.5, cluster_centers)
         curr += 1
         print(cluster_centers)
 
