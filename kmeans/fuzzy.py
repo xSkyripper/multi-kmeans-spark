@@ -55,6 +55,18 @@ def initialize_membership_instance(n, number_of_clusters):
     return membership_matrix
 
 
+def compute_centroid(partial_data, m, dim):
+    upper_sum = np.zeros(shape=(1, dim))
+    lower_sum = np.zeros(shape=(1, dim))
+    m = float(m)
+
+    for tpl in partial_data:
+        point = tpl[0]
+        u = tpl[1]
+        upper_sum += (u ** m) * point
+        lower_sum += (u ** m)
+
+    return upper_sum / lower_sum
 
 @click.command()
 @click.option('-f', '--file', required=True)
@@ -72,6 +84,7 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
 
     centroids_delta_distance = 1.0
     number_of_points = len(data.collect())
+    dimensions = len(data.collect()[0])
     membership_matrix = initialize_membership_instance(number_of_points, number_of_clusters)
     membership_matrix = spark.sparkContext.parallelize(membership_matrix)
     pprint(membership_matrix.collect())
@@ -92,15 +105,11 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
     grouped = mapped.groupByKey().map(lambda r: (r[0], list(r[1])))
     pprint(grouped.collect())
 
-    # while centroids_delta_distance > convergence_distance:
-    #
-    #     for j in range(number_of_clusters):
-    #         vertical_merged_data = data.map(lambda point: (j, (point, np.stack(membership_matrix.T)[j])))
-    #
-    #     pprint(vertical_merged_data.collect())
-    #     vertical_merged_data = vertical_merged_data.groupByKey().map(lambda x: (x[0], list(x[1])))
-    #     pprint(vertical_merged_data.collect())
-    #     break
+    centroids_data = grouped.map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
+    pprint(centroids_data.collect())
+    
+    while centroids_delta_distance > convergence_distance:
+        break
 
     spark.stop()
 
