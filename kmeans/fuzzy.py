@@ -86,28 +86,39 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
     number_of_points = len(data.collect())
     dimensions = len(data.collect()[0])
     membership_matrix = initialize_membership_instance(number_of_points, number_of_clusters)
+
     membership_matrix = spark.sparkContext.parallelize(membership_matrix)
+    print("\nInitial membership matrix:")
     pprint(membership_matrix.collect())
 
     membership_matrix = membership_matrix.zipWithIndex()
+    print("\nWith index membership matrix:")
+    pprint(membership_matrix.collect())
+
     membership_matrix = membership_matrix.flatMap(lambda row: [(row[1], (u, k)) for k, u in enumerate(row[0])])
-    # pprint(membership_matrix.collect())
+    print("\nFlattened membership matrix:")
+    pprint(membership_matrix.collect())
 
     data = data.zipWithIndex().map(lambda p: (p[1], p[0]))
-    # pprint(data.collect())
+    print("\nWith index points:")
+    pprint(data.collect())
 
     joined = data.join(membership_matrix)
-    # pprint(joined.collect())
+    print("\nJoined points - membership matrix:")
+    pprint(joined.collect())
 
     mapped = joined.map(lambda r: (r[1][1][1], (r[1][0], r[1][1][0])))
-    # pprint(mapped.collect())
+    print("\nRemapped join:")
+    pprint(mapped.collect())
 
     grouped = mapped.groupByKey().map(lambda r: (r[0], list(r[1])))
+    print("\nGrouped:")
     pprint(grouped.collect())
 
     centroids_data = grouped.map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
+    print("\nCentroids matrix:")
     pprint(centroids_data.collect())
-    
+
     while centroids_delta_distance > convergence_distance:
         break
 
