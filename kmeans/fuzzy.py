@@ -193,7 +193,7 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
 
         previous_current_membership = new_membership \
             .join(previous_membership_matrix) \
-            # .mapValues(lambda value: value[0] - value[1])
+            .mapValues(lambda value: value[0] - value[1])
         # print("Joined membership")
         # pprint(previous_current_membership.collect())
 
