@@ -1,0 +1,1 @@
+"D:\Python Envs\Python3\SparkEnv\Scripts\python.exe" -m kmeans.fuzzy -f tmp/in.txt -k 2 -c 0.01 -m 1.25

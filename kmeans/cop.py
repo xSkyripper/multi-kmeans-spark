@@ -97,6 +97,14 @@ def violates_constraints(point_index, cluster_index, point_to_cluster_assignment
     return False
 
 
+def compute_new_centroids(points):
+    new_point = 0
+    for i in range(1, len(points)):
+        new_point += points[i]
+
+    return new_point / len(points)
+
+
 @click.command()
 @click.option("-f", "--file", required=True)
 @click.option("-k", "--number-of-clusters", required=True)
@@ -148,9 +156,8 @@ def main(file, number_of_clusters, convergence_distance, constraints_file):
     for links in cannot_link_graph.values():
         count2 += len(links)
 
-    centroids_delta_dist = 1.0
     iterations = 0
-    while centroids_delta_dist > convergence_distance and iterations < 20:
+    while iterations < 20:
         print("Iteration: {}".format(iterations))
         point_to_centroids = points.map(lambda point: (point[0], distance_to_centroids(point, centroids)))
         aux = point_to_centroids.collect()
@@ -184,24 +191,23 @@ def main(file, number_of_clusters, convergence_distance, constraints_file):
             .map(lambda x: (x[1][0], np.array(x[1][1]))) \
             .groupByKey() \
             .map(lambda x: (x[0], list(x[1]))) \
-            .map(lambda x: (x[0], (np.sum(x[1]), len(x[1])))) \
+            .map(lambda x: (x[0], compute_new_centroids(x[1]))) \
             .collect()
-
-        # .map(lambda x: (x[0], x[1][0] / x[1][1])) \
-        # .collect()
 
         print("New Centroids")
         pprint(new_centroids)
+        pprint(len(new_centroids))
 
-        # centroids_delta_dist = sum(np.sum((centroids[index] - p) ** 2) for index, p in new_centroids)
-        # for index, point in new_centroids:
-        #     centroids[index] = point
-        #
-        # print("Next Iteration Centroids")
-        # pprint(centroids)
-        # iterations += 1
+        centroids_delta_dist = sum(np.sum((centroids[index] - p) ** 2) for index, p in new_centroids)
+        for index, point in new_centroids:
+            if type(point) is float:
+                point = np.zeros(shape=(1, 4))
+            centroids[index] = point
 
-        break
+        iterations += 1
+        print(centroids_delta_dist)
+        if centroids_delta_dist < convergence_distance:
+            break
 
     spark.stop()
 

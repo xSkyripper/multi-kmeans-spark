@@ -1,1 +1,1 @@
-"D:\Python Envs\Python3\SparkEnv\Scripts\python.exe" -m kmeans.cop -f tmp/iris.txt -k 5 -c 0.9 -cop tmp/iris_constraints.txt
+"D:\Python Envs\Python3\SparkEnv\Scripts\python.exe" -m kmeans.cop -f tmp/iris.txt -k 5 -c 0.01 -cop tmp/iris_constraints.txt
