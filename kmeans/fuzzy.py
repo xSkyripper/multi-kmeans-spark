@@ -1,7 +1,8 @@
-import numpy as np, numpy.random
-from pyspark.sql import SparkSession
 from pprint import pprint
+
 import click
+import numpy as np
+from pyspark.sql import SparkSession
 
 
 # class FuzzyKMeans(object):
@@ -68,6 +69,28 @@ def compute_centroid(partial_data, m, dim):
 
     return upper_sum / lower_sum
 
+
+def generate_computes(distances):
+    results = []
+    for distance in distances:
+        results.append((distance, distances))
+
+    return results
+
+
+def compute_membership(line, m):
+    results = []
+    for cell in line:
+        result = 0
+        d_i_j = cell[0]
+        for d_k_j in cell[1]:
+            result += (d_i_j / d_k_j) ** (2 / m - 1)
+
+        results.append(1 / result)
+
+    return np.array(results)
+
+
 @click.command()
 @click.option('-f', '--file', required=True)
 @click.option('-k', '--number-of-clusters', required=True)
@@ -79,48 +102,115 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
     data = lines.map(parse_vector).cache()
     number_of_clusters = int(number_of_clusters)
     convergence_distance = float(convergence_distance)
+    fuzziness_level = float(fuzziness_level)
 
-    centroids = data.takeSample(False, number_of_clusters)
-
-    centroids_delta_distance = 1.0
+    # centroids = data.takeSample(False, number_of_clusters)
+    # centroids_delta_distance = 1.0
+    #
     number_of_points = len(data.collect())
     dimensions = len(data.collect()[0])
     membership_matrix = initialize_membership_instance(number_of_points, number_of_clusters)
 
     membership_matrix = spark.sparkContext.parallelize(membership_matrix)
-    print("\nInitial membership matrix:")
-    pprint(membership_matrix.collect())
-
-    membership_matrix = membership_matrix.zipWithIndex()
-    print("\nWith index membership matrix:")
-    pprint(membership_matrix.collect())
-
-    membership_matrix = membership_matrix.flatMap(lambda row: [(row[1], (u, k)) for k, u in enumerate(row[0])])
-    print("\nFlattened membership matrix:")
-    pprint(membership_matrix.collect())
+    # print("\nInitial membership matrix:")
+    # pprint(membership_matrix.collect())
 
     data = data.zipWithIndex().map(lambda p: (p[1], p[0]))
-    print("\nWith index points:")
-    pprint(data.collect())
+    # print("\nWith index points:")
+    # pprint(data.collect())
 
-    joined = data.join(membership_matrix)
-    print("\nJoined points - membership matrix:")
-    pprint(joined.collect())
+    membership_matrix = membership_matrix.zipWithIndex()
+    previous_membership_matrix = membership_matrix.map(lambda x: (x[1], x[0]))
+    # print("\nWith index membership matrix:")
+    # pprint(membership_matrix.collect())
 
-    mapped = joined.map(lambda r: (r[1][1][1], (r[1][0], r[1][1][0])))
-    print("\nRemapped join:")
-    pprint(mapped.collect())
+    # membership_matrix = membership_matrix.flatMap(lambda row: [(row[1], (u, k)) for k, u in enumerate(row[0])])
+    # print("\nFlattened membership matrix:")
+    # pprint(membership_matrix.collect())
+    #
+    # data = data.zipWithIndex().map(lambda p: (p[1], p[0]))
+    # print("\nWith index points:")
+    # pprint(data.collect())
+    #
+    # joined = data.join(membership_matrix)
+    # print("\nJoined points - membership matrix:")
+    # pprint(joined.collect())
+    #
+    # mapped = joined.map(lambda r: (r[1][1][1], (r[1][0], r[1][1][0])))
+    # print("\nRemapped join:")
+    # pprint(mapped.collect())
+    #
+    # grouped = mapped.groupByKey().map(lambda r: (r[0], list(r[1])))
+    # print("\nGrouped:")
+    # pprint(grouped.collect())
+    #
+    # centroids_data = grouped.map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
+    # print("\nCentroids matrix:")
+    # pprint(centroids_data.collect())
 
-    grouped = mapped.groupByKey().map(lambda r: (r[0], list(r[1])))
-    print("\nGrouped:")
-    pprint(grouped.collect())
+    iterations = 0
+    while iterations < 10:
 
-    centroids_data = grouped.map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
-    print("\nCentroids matrix:")
-    pprint(centroids_data.collect())
+        membership_matrix = membership_matrix.flatMap(lambda row: [(row[1], (u, k)) for k, u in enumerate(row[0])])
+        # print("\nFlattened membership matrix:")
+        # pprint(membership_matrix.collect())
 
-    while centroids_delta_distance > convergence_distance:
-        break
+        joined = data.join(membership_matrix)
+        # print("\nJoined points - membership matrix:")
+        # pprint(joined.collect())
+
+        mapped = joined.map(lambda r: (r[1][1][1], (r[1][0], r[1][1][0])))
+        # print("\nRemapped join:")
+        # pprint(mapped.collect())
+
+        grouped = mapped.groupByKey().map(lambda r: (r[0], list(r[1])))
+        # print("\nGrouped:")
+        # pprint(grouped.collect())
+
+        centroids_data = grouped.map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
+        # print("\nCentroids matrix:")
+        # pprint(centroids_data.collect())
+
+        cross_data_centroids = data.cartesian(centroids_data)
+        # print("Cartesian data - centroids")
+        # pprint(cross_data_centroids.collect())
+
+        distances = cross_data_centroids \
+            .map(lambda i_p_c: (i_p_c[0][0], (np.linalg.norm(i_p_c[0][1] - i_p_c[1])))) \
+            .reduceByKey(lambda d1, d2: (d1, d2))
+        # print("Distances")
+        # pprint(distances.collect())
+
+        new_membership = distances \
+            .mapValues(lambda value: generate_computes(value)) \
+            .mapValues(lambda value: compute_membership(value, fuzziness_level))
+
+        # print("New membership computes")
+        # pprint(new_membership.collect())
+        #
+        # print("Old Membership Matrix")
+        # pprint(previous_membership_matrix.collect())
+
+        previous_current_membership = new_membership \
+            .join(previous_membership_matrix)
+
+        # print("Joined membership")
+        # pprint(previous_current_membership.collect())
+
+        previous_current_difference_membership = previous_current_membership \
+            .mapValues(lambda value: np.linalg.norm(value[0] - value[1], ord=1))
+        # print("Difference Membership")
+        # pprint(previous_current_difference_membership.collect())
+
+        max_difference = previous_current_difference_membership.max(lambda x: x[1])
+        print("Max difference")
+        print(max_difference)
+        if max_difference[1] > convergence_distance:
+            break
+
+        previous_membership_matrix = membership_matrix
+        membership_matrix = new_membership.map(lambda x: (x[1], x[0]))
+        iterations += 1
 
     spark.stop()
 
