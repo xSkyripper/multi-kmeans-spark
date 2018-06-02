@@ -30,9 +30,8 @@ def get_ns_neighbors(distances, ns):
 def compute_nearest_neighbors(points, ns):
     nearest_neighbors = []
     for idx, point in enumerate(points):
-        distances = [(i, euclidean_distance(point, x))
+        distances = [(euclidean_distance(point, x), i)
                      for i, x in enumerate(points) if tuple(x) != tuple(point)]
-        distances = list(map(lambda x: (x[1], x[0]), distances))
         ns_neighbors = get_ns_neighbors(distances, ns)
         nearest_neighbors.append((idx, list(map(lambda x: x[1], ns_neighbors))))
 
@@ -110,7 +109,7 @@ def main(file, no_clusters, max_iterations, itr):
     nearest_neighbors = compute_nearest_neighbors(points, ns)
     print('Nearest neighbors')
     pprint(nearest_neighbors)
-
+    return
     kmeans_model = KMeans.train(data, no_clusters, maxIterations=max_iterations, initializationMode="random")
     initial_centroids = kmeans_model.clusterCenters[:]
     print('Initial centroids')
