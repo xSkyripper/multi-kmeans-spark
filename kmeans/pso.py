@@ -101,6 +101,7 @@ def main(file, no_clusters, no_particles, max_iterations):
     nearest_neighbors = compute_nearest_neighbors(points, ns)
     pprint(nearest_neighbors)
     clusters = KMeans.train(data, no_clusters, maxIterations=max_iterations, initializationMode="random")
+    initial_centroids = clusters.clusterCenters[:]
     pprint(clusters.clusterCenters)
 
     squared_sigma = compute_squared_sigma(points, clusters)
@@ -113,14 +114,14 @@ def main(file, no_clusters, no_particles, max_iterations):
 
     iterations = 0
     while True:
+        old_positions = positions[:]
         for idx, point in enumerate(points):
-            personal_bests[idx] = compute_personal_best(nearest_neighbors[idx][1], positions)
+            personal_bests[idx] = compute_personal_best(nearest_neighbors[idx][1], old_positions)
             global_bests[idx] = compute_global_best(point, clusters)
             positions[idx], velocities[idx] = compute_position_velocity(
                 positions[idx], velocities[idx],
                 personal_bests[idx], global_bests[idx], squared_sigma
             )
-
         print("\nPositions:")
         pprint(positions)
         print("\nVelocities:")
@@ -138,11 +139,20 @@ def main(file, no_clusters, no_particles, max_iterations):
 
         iterations += 1
         print("=" * 70, " FINISHED ITERATION {}".format(iterations))
-        if stop_condition(clusters.clusterCenters, new_clusters.clusterCenters, no_clusters, iterations, max_iterations):
+        if stop_condition(clusters.clusterCenters, new_clusters.clusterCenters,
+                          no_clusters, iterations, max_iterations):
             break
 
         clusters = new_clusters
 
+    # TODO: RECHECK CODE
+    # TODO: stop condition should be on indexes of items in clusters for 'itr' iterations
+    # TODO: stop condition 2 (?) should compute delta distance between clusters
+    # TODO: test again with positions dilemma
+    # TODO: find a good dataset to test and implement a visualiser with pyplot
+
+    print("\n\nInitial k-means centroids:")
+    pprint(initial_centroids)
     print("\n\nFinal centroids:")
     pprint(clusters.clusterCenters)
 
