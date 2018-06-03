@@ -109,7 +109,7 @@ def main(file, no_clusters, max_iterations, itr):
     nearest_neighbors = compute_nearest_neighbors(points, ns)
     print('Nearest neighbors')
     pprint(nearest_neighbors)
-    return
+
     kmeans_model = KMeans.train(data, no_clusters, maxIterations=max_iterations, initializationMode="random")
     initial_centroids = kmeans_model.clusterCenters[:]
     print('Initial centroids')
@@ -130,9 +130,9 @@ def main(file, no_clusters, max_iterations, itr):
     initial_clusters = clusters[:]
 
     while True:
-        for idx, point in enumerate(points):
+        for idx in range(no_clusters):
             personal_bests[idx] = compute_personal_best(nearest_neighbors[idx][1], positions)
-            global_bests[idx] = compute_global_best(point, kmeans_model)
+            global_bests[idx] = compute_global_best(positions[idx], kmeans_model)
             positions[idx], velocities[idx] = compute_position_velocity(
                 positions[idx], velocities[idx],
                 personal_bests[idx], global_bests[idx], squared_sigma
