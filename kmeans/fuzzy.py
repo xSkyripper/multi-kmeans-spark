@@ -124,30 +124,6 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
     # print("\nWith index membership matrix:")
     # pprint(membership_matrix.collect())
 
-    # membership_matrix = membership_matrix.flatMap(lambda row: [(row[1], (u, k)) for k, u in enumerate(row[0])])
-    # print("\nFlattened membership matrix:")
-    # pprint(membership_matrix.collect())
-    #
-    # data = data.zipWithIndex().map(lambda p: (p[1], p[0]))
-    # print("\nWith index points:")
-    # pprint(data.collect())
-    #
-    # joined = data.join(membership_matrix)
-    # print("\nJoined points - membership matrix:")
-    # pprint(joined.collect())
-    #
-    # mapped = joined.map(lambda r: (r[1][1][1], (r[1][0], r[1][1][0])))
-    # print("\nRemapped join:")
-    # pprint(mapped.collect())
-    #
-    # grouped = mapped.groupByKey().map(lambda r: (r[0], list(r[1])))
-    # print("\nGrouped:")
-    # pprint(grouped.collect())
-    #
-    # centroids_data = grouped.map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
-    # print("\nCentroids matrix:")
-    # pprint(centroids_data.collect())
-
     iterations = 0
     while iterations < 10:
 
@@ -205,12 +181,14 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
         max_difference = previous_current_difference_membership.max(lambda x: x[1])
         print("Max difference")
         print(max_difference)
-        if max_difference[1] > convergence_distance:
+        if max_difference[1] < convergence_distance:
             break
 
-        previous_membership_matrix = membership_matrix
+        previous_membership_matrix = new_membership
         membership_matrix = new_membership.map(lambda x: (x[1], x[0]))
         iterations += 1
+
+        print("Finished iteration: {}".format(iterations))
 
     spark.stop()
 
