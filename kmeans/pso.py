@@ -1,7 +1,6 @@
 import click
 import numpy as np
 import math
-import heapq
 
 from sklearn.neighbors import NearestNeighbors
 from pyspark.mllib.clustering import KMeans
