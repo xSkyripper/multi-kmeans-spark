@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import click
 import numpy as np
 from pprint import pprint
@@ -25,24 +23,20 @@ def closest_point(point, centroids):
 
 @click.command()
 @click.option('-f', '--file', required=True)
-@click.option('-k', '--no-clusters', required=True)
-@click.option('-c', '--converge-dist', required=True)
+@click.option('-k', '--no-clusters', required=True, type=click.INT)
+@click.option('-c', '--converge-dist', required=True, type=click.FLOAT)
 def main(file, no_clusters, converge_dist):
     spark = SparkSession.builder.appName('PythonKMeans').getOrCreate()
     lines = spark.read.text(file).rdd.map(lambda r: r[0])
-    data = lines.map(parse_vector).cache()
-    k = int(no_clusters)
-    converge_dist = float(converge_dist)
+    data_items = lines.map(parse_vector).cache()
 
-    centroids = data.takeSample(False, k)
-    print("initial centroids:")
-    pprint(centroids)
-    # centroids = np.array([(1.90, 0.97), (3.17, 4.96)])
-    centroids_delta_dist = 1.0
+    centroids = data_items.takeSample(False, no_clusters)
 
     iterations = 0
+    centroids_delta_dist = 1.0
+
     while centroids_delta_dist > converge_dist:
-        closest = data.map(lambda p: (closest_point(p, centroids), (p, 1)))
+        closest = data_items.map(lambda p: (closest_point(p, centroids), (p, 1)))
         point_stats = closest.reduceByKey(lambda p1_c1, p2_c2: (p1_c1[0] + p2_c2[0], p1_c1[1] + p2_c2[1]))
         new_points = point_stats.map(lambda st: (st[0], st[1][0] / st[1][1])).collect()
 
