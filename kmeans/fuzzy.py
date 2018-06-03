@@ -5,50 +5,8 @@ import numpy as np
 from pyspark.sql import SparkSession
 
 
-# class FuzzyKMeans(object):
-#     NAME = "FuzzyKMeans"
-#
-#     def __init__(self, file, number_of_clusters, convergence_distance, fuzziness_level):
-#         self.file = file
-#         self.number_of_cluster = number_of_clusters
-#         self.convergence_distance = convergence_distance
-#         self.fuzziness_level = fuzziness_level
-#
-#     def _parse_vector(self, line):
-#         return np.array([float(x) for x in line.split(' ')])
-#
-#     def _initialize_membership_instance(self, n):
-#         return np.random.random((n, self.number_of_cluster))
-#
-#
-#     def run(self):
-#         spark = SparkSession.builder.appName(self.NAME).getOrCreate()
-#         lines = spark.read.text(self.file).rdd(lambda line: line[0])
-#         data = lines.map(self._parse_vector).cache()
-#
-#         centroids = data.takeSample(False, self.number_of_cluster)
-#         print("Initial centroids")
-#         pprint(centroids)
-#
-#         centroids_delta_distance = 1.0
-#         number_of_points = data.collect().__len__()
-#         membership_matrix = self._initialize_membership_instance(number_of_points)
-#
-#         while centroids_delta_distance > self.convergence_distance:
-#             vertical_merged_data = data.map(lambda point: (point, centroids))
-#             vertical_merged_data = vertical_merged_data.groupByKey().map(lambda x: (x[0], list(x[1])))
-#
-#             new_centroids = []
-#             for j in range(len(centroids)):
-#                 new_centroids[j] = np.divide(
-#                     np.sum([membership_matrix[i][j] ** self.fuzziness_level * data[i] for i in
-#                             range(0, number_of_points)]),
-#                     np.sum([membership_matrix[i][j] ** self.fuzziness_level])
-#                 )
-
-
 def parse_vector(line):
-    return np.array([float(x) for x in line.split(' ')])
+    return np.array([float(x) for x in line.rstrip().split(',')])
 
 
 def initialize_membership_instance(n, number_of_clusters):
@@ -84,11 +42,23 @@ def compute_membership(line, m):
         result = 0
         d_i_j = cell[0]
         for d_k_j in cell[1]:
+            # print("{} ======= {}".format(d_i_j, d_k_j))
             result += (d_i_j / d_k_j) ** (2 / m - 1)
 
         results.append(1 / result)
 
     return np.array(results)
+
+
+def compute(d1, d2):
+    if type(d1) == np.float64 and type(d2) == np.float64:
+        result = (d1, d2)
+    elif type(d1) != type(d2):
+        result = d1 + (float(d2),)
+    else:
+        result = d1 + d2
+
+    return result
 
 
 @click.command()
@@ -153,16 +123,12 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
 
         distances = cross_data_centroids \
             .map(lambda i_p_c: (i_p_c[0][0], (np.linalg.norm(i_p_c[0][1] - i_p_c[1])))) \
-            .reduceByKey(lambda d1, d2: (d1, d2))
-        # print("Distances")
-        # pprint(distances.collect())
+            .reduceByKey(compute)
 
         new_membership = distances \
             .mapValues(lambda value: generate_computes(value)) \
             .mapValues(lambda value: compute_membership(value, fuzziness_level))
 
-        # print("New membership computes")
-        # pprint(new_membership.collect())
         #
         # print("Old Membership Matrix")
         # pprint(previous_membership_matrix.collect())
