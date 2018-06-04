@@ -1,19 +1,18 @@
-import numpy as np
-import numpy.random
 import random
-from pyspark.sql import SparkSession
-from pprint import pprint
 import click
+import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.pyplot import cm
+from pyspark.sql import SparkSession
+from pprint import pprint
 
 
 def parse_vector(line):
     return np.array([float(x) for x in line.split(' ')])
 
 
-def init_random_clusters(data, k):
-    clusters = data.zipWithIndex()
+def init_random_clusters(data_items, k):
+    clusters = data_items.zipWithIndex()
     clusters = clusters.map(lambda p_i: (np.random.randint(k), p_i[1]))
     return clusters
 
@@ -81,8 +80,8 @@ def stop_condition(clusters, new_clusters, iteration, max_iterations, k):
 
     # pprint(clusters_data)
     # pprint(new_clusters_data)
-    sorted_clusters = [[] for i in range(k)]
-    sorted_new_clusters = [[] for i in range(k)]
+    sorted_clusters = [[] for _ in range(k)]
+    sorted_new_clusters = [[] for _ in range(k)]
 
     for group in clusters_data:
         sorted_clusters[group[0]].extend(group[1])
@@ -128,11 +127,11 @@ def plot_clusters(maps, centroids, n, k):
     clusters_data = maps.collect()
     centroids_data = centroids.collect()
 
-    final_centroids = [[] for i in range(k)]
+    final_centroids = [[] for _ in range(k)]
     for centroid_index, centroid in centroids_data:
         final_centroids[centroid_index].extend(centroid)
 
-    final_clusters = [[] for i in range(k)]
+    final_clusters = [[] for _ in range(k)]
     for centroid_index, point_ in clusters_data:
         final_clusters[centroid_index].append(point_[0])
 
@@ -167,25 +166,21 @@ def plot_clusters(maps, centroids, n, k):
     plt.show()
 
 
-@click.command()
-@click.option('-f', '--file', required=True)
-@click.option('-k', '--no-clusters', required=True)
-@click.option('-i', '--max-iterations', required=True)
-def main(file, no_clusters, max_iterations):
-    spark = SparkSession.builder.appName('PythonKMeans').getOrCreate()
-    lines = spark.read.text(file).rdd.map(lambda r: r[0])
-    data = lines.map(parse_vector).cache()
-    k = int(no_clusters)
-    n = len(data.collect())
-    max_iterations = int(max_iterations)
+def kernel(input_file, no_clusters, max_iterations):
+    spark = SparkSession.builder.appName('KMeans - Kernel').getOrCreate()
+    lines = spark.read.text(input_file).rdd.map(lambda r: r[0])
+    data_items = lines.map(parse_vector).cache()
 
-    kernel_values = init_kernel_matrix(data, 4)
+    n = data_items.count()
+    max_iterations = max_iterations or np.inf
+
+    kernel_values = init_kernel_matrix(data_items, 4)
     kernel_matrix = np.array(kernel_values.collect()).reshape(n, n)
     bc_kernel_matrix = spark.sparkContext.broadcast(kernel_matrix)
     # print("\nKernel matrix")
     # pprint(kernel_matrix)
 
-    clusters = init_random_clusters(data, k)
+    clusters = init_random_clusters(data_items, no_clusters)
     # print("\nInit random Clusters")
     # pprint(clusters.collect())
 
@@ -242,7 +237,7 @@ def main(file, no_clusters, max_iterations):
         # print('\nNew assigns')
         # pprint(new_assigns)
 
-        new_clusters = [[i, []] for i in range(k)]
+        new_clusters = [[i, []] for i in range(no_clusters)]
         for point_index, cluster_distance in new_assigns:
             new_clusters[cluster_distance[0]][1].append(point_index)
 
@@ -252,17 +247,23 @@ def main(file, no_clusters, max_iterations):
 
         iteration += 1
         # print("\n\n==========================================================")
-        if stop_condition(clusters, new_clusters, iteration, max_iterations, k):
+        if stop_condition(clusters, new_clusters, iteration, max_iterations, no_clusters):
             break
 
         clusters = new_clusters
 
-    centroids, maps = compute_centroids(clusters, data)
+    centroids, maps = compute_centroids(clusters, data_items)
     # pprint(centroids.collect())
     # pprint(maps.collect())
-    plot_clusters(maps, centroids, n, k)
+    plot_clusters(maps, centroids, n, no_clusters)
 
 
+@click.command()
+@click.option('-f', '--input-file', required=True)
+@click.option('-k', '--no-clusters', required=True, type=click.INT)
+@click.option('-i', '--max-iterations', type=click.INT)
+def main(input_file, no_clusters, max_iterations):
+    kernel(input_file, no_clusters, max_iterations)
 
 
 if __name__ == '__main__':

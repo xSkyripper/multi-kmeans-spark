@@ -1,12 +1,10 @@
-from pprint import pprint
-
 import click
 import numpy as np
 from pyspark.sql import SparkSession
 
 
-def parse_vector(line):
-    return np.array([float(x) for x in line.rstrip().split(',')])
+def parse_vector(line, delim):
+    return np.array([float(x) for x in line.rstrip().split(delim)])
 
 
 def initialize_membership_instance(n, number_of_clusters):
@@ -17,7 +15,6 @@ def initialize_membership_instance(n, number_of_clusters):
 def compute_centroid(partial_data, m, dim):
     upper_sum = np.zeros(shape=(1, dim))
     lower_sum = np.zeros(shape=(1, dim))
-    m = float(m)
 
     for tpl in partial_data:
         point = tpl[0]
@@ -61,25 +58,18 @@ def compute(d1, d2):
     return result
 
 
-@click.command()
-@click.option('-f', '--file', required=True)
-@click.option('-k', '--number-of-clusters', required=True)
-@click.option('-c', '--convergence-distance', required=True)
-@click.option('-m', '--fuzziness-level', required=True)
-def main(file, number_of_clusters, convergence_distance, fuzziness_level):
-    spark = SparkSession.builder.appName("Fuzzy").getOrCreate()
-    lines = spark.read.text(file).rdd.map(lambda line: line[0])
-    data = lines.map(parse_vector).cache()
-    number_of_clusters = int(number_of_clusters)
-    convergence_distance = float(convergence_distance)
-    fuzziness_level = float(fuzziness_level)
+def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations):
+    spark = SparkSession.builder.appName("KMeans - Fuzzy").getOrCreate()
+    lines = spark.read.text(input_file).rdd.map(lambda line: line[0])
+    data = lines.map(lambda x: parse_vector(x, ' ')).cache()
+    max_iterations = max_iterations or np.inf
 
     # centroids = data.takeSample(False, number_of_clusters)
     # centroids_delta_distance = 1.0
     #
-    number_of_points = len(data.collect())
-    dimensions = len(data.collect()[0])
-    membership_matrix = initialize_membership_instance(number_of_points, number_of_clusters)
+    n = data.count()
+    dimensions = len(data.first())
+    membership_matrix = initialize_membership_instance(n, no_clusters)
 
     membership_matrix = spark.sparkContext.parallelize(membership_matrix)
     # print("\nInitial membership matrix:")
@@ -95,7 +85,7 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
     # pprint(membership_matrix.collect())
 
     iterations = 0
-    while iterations < 10:
+    while True:
 
         membership_matrix = membership_matrix.flatMap(lambda row: [(row[1], (u, k)) for k, u in enumerate(row[0])])
         # print("\nFlattened membership matrix:")
@@ -147,7 +137,7 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
         max_difference = previous_current_difference_membership.max(lambda x: x[1])
         print("Max difference")
         print(max_difference)
-        if max_difference[1] < convergence_distance:
+        if max_difference[1] < convergence_distance or iterations >= max_iterations:
             break
 
         previous_membership_matrix = new_membership
@@ -157,6 +147,16 @@ def main(file, number_of_clusters, convergence_distance, fuzziness_level):
         print("Finished iteration: {}".format(iterations))
 
     spark.stop()
+
+
+@click.command()
+@click.option('-f', '--input-file', required=True)
+@click.option('-k', '--no-clusters', required=True, type=click.INT)
+@click.option('-c', '--convergence-distance', required=True, type=click.FLOAT)
+@click.option('-m', '--fuzziness-level', required=True, type=click.FLOAT)
+@click.option('-i', '--max-iterations', type=click.INT)
+def main(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations):
+    fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations)
 
 
 if __name__ == '__main__':

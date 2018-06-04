@@ -89,7 +89,7 @@ def stop_condition(k, clusters, new_clusters, itr):
 @click.option('--itr', required=True, type=click.INT)
 @click.option('--ns', type=click.INT)
 def main(file, no_clusters, max_iterations, ns, itr):
-    spark = SparkSession.builder.appName("PythonKMeans").getOrCreate()
+    spark = SparkSession.builder.appName("KMeans - PSO").getOrCreate()
     lines = spark.read.text(file).rdd.map(lambda r: r[0])
     data_items = lines.map(parse_vector).cache()
     n = data_items.count()
@@ -97,9 +97,10 @@ def main(file, no_clusters, max_iterations, ns, itr):
 
     nearest_neighbors = compute_nearest_neighbors(spark.sparkContext, data_items, ns)
     kmeans_model = KMeans.train(data_items, no_clusters,
-                                maxIterations=max_iterations, initializationMode='random')
+                                maxIterations=max_iterations or 100, initializationMode='random')
     squared_sigma = compute_squared_sigma(data_items, n, kmeans_model)
 
+    max_iterations = max_iterations or np.inf
     iterations = 0
     convergence_iterations = 0
     positions = data_items.collect()
@@ -111,7 +112,7 @@ def main(file, no_clusters, max_iterations, ns, itr):
     initial_centroids = kmeans_model.clusterCenters[:]
 
     while True:
-        for idx in range(no_clusters):
+        for idx in range(n):
             personal_bests[idx] = compute_personal_best(nearest_neighbors[idx][1], positions)
             global_bests[idx] = compute_global_best(positions[idx], kmeans_model)
             positions[idx], velocities[idx] = compute_position_velocity(

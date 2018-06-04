@@ -1,11 +1,8 @@
-from __future__ import print_function
-
-import sys
-from pprint import pprint
-
 import click
 import numpy as np
 from pyspark.sql import SparkSession
+from pprint import pprint
+
 
 MUST_LINK = 1
 CANNOT_LINK = -1
@@ -105,23 +102,16 @@ def compute_new_centroids(points):
     return new_point / len(points)
 
 
-@click.command()
-@click.option("-f", "--file", required=True)
-@click.option("-k", "--number-of-clusters", required=True)
-@click.option("-c", "--convergence-distance", required=True)
-@click.option("-cop", "--constraints-file", required=True)
-def main(file, number_of_clusters, convergence_distance, constraints_file):
-    k = int(number_of_clusters)
-    convergence_distance = float(convergence_distance)
+def cop(input_file, constraints_file, no_clusters, convergence_distance, max_iterations):
+    spark = SparkSession.builder.appName("KMeans - COP").getOrCreate()
+    max_iterations = max_iterations or np.inf
 
-    spark = SparkSession.builder.appName("COP-K-Means").getOrCreate()
-
-    points = spark.read.text(file).rdd \
+    points = spark.read.text(input_file).rdd \
         .map(lambda r: r[0]) \
         .map(parse_vector) \
         .cache()
 
-    centroids = points.takeSample(False, k)
+    centroids = points.takeSample(False, no_clusters)
     print("Initial centroids")
     pprint(centroids)
     points = points \
@@ -157,7 +147,7 @@ def main(file, number_of_clusters, convergence_distance, constraints_file):
         count2 += len(links)
 
     iterations = 0
-    while iterations < 20:
+    while iterations < max_iterations:
         print("Iteration: {}".format(iterations))
         point_to_centroids = points.map(lambda point: (point[0], distance_to_centroids(point, centroids)))
         aux = point_to_centroids.collect()
@@ -181,7 +171,7 @@ def main(file, number_of_clusters, convergence_distance, constraints_file):
                 if counter == len(point_to_cluster_assignment):
                     print("Point cannot be assigned to a cluster due to the constraints.")
                     spark.stop()
-                    sys.exit(1)
+                    return
 
         point_to_cluster_assignment = spark.sparkContext.parallelize(point_to_cluster_assignment)
         new_centroids = point_to_cluster_assignment \
@@ -210,6 +200,16 @@ def main(file, number_of_clusters, convergence_distance, constraints_file):
             break
 
     spark.stop()
+
+
+@click.command()
+@click.option("-f", "--input-file", required=True)
+@click.option("-cop", "--constraints-file", required=True)
+@click.option("-k", "--no_clusters", required=True, type=click.INT)
+@click.option("-c", "--convergence-distance", required=True, type=click.FLOAT)
+@click.option("-i", "--max-iterations", type=click.INT)
+def main(input_file, no_clusters, convergence_distance, constraints_file, max_iterations):
+    cop(input_file, constraints_file, no_clusters, convergence_distance, max_iterations)
 
 
 if __name__ == '__main__':
