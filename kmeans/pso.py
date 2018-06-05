@@ -85,7 +85,7 @@ def stop_condition(k, clusters, new_clusters, itr):
 @click.command()
 @click.option('-f', '--file', required=True)
 @click.option('-k', '--no-clusters', required=True, type=click.INT)
-@click.option('-i', '--max-iterations', required=True, type=click.INT)
+@click.option('-i', '--max-iterations', type=click.INT)
 @click.option('--itr', required=True, type=click.INT)
 @click.option('--ns', type=click.INT)
 def main(file, no_clusters, max_iterations, ns, itr):
