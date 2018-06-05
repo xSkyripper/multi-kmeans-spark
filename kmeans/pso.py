@@ -9,7 +9,7 @@ from pprint import pprint
 
 
 def parse_vector(line):
-    return np.array([float(x) for x in line.split(' ')])
+    return np.array([float(x) for x in line.split(',')])
 
 
 def euclidean_distance(x1, x2):
@@ -76,10 +76,42 @@ def compute_position_velocity(position, velocity, personal_best, global_best, sq
 
 def stop_condition(k, clusters, new_clusters, itr):
     for cluster_idx in range(k):
+        print(set(clusters[cluster_idx]), set(new_clusters[cluster_idx]))
         if set(clusters[cluster_idx]) != set(new_clusters[cluster_idx]):
             return 0
 
     return itr + 1
+
+
+def computer_nn(model, point):
+    model = model.value
+    return model.kneighbors(X=[point], return_distance=False)[0][1:]
+
+
+def computer_clusters2(bc_kmeans_model, point_index, point):
+    return bc_kmeans_model.value.predict(point), point_index
+
+
+def computer_personal_best2(point, neighbours, ns):
+    return point, np.sum(neighbours, axis=0) / ns
+
+
+def computer_global_best2(bc_kmeans_model, point, centroids):
+    return centroids[bc_kmeans_model.value.predict(point)]
+
+
+def computer_velocity(data, squared_sigma):
+    velocity, point, personal_best, global_best = data
+    dist = euclidean_distance(point, global_best)
+    weight = 1 if dist < 0.125 * math.sqrt(squared_sigma) else 0
+
+    new_velocity = velocity + (personal_best - point) + weight * (global_best - point)
+    return new_velocity
+
+
+def computer_new_point_position(point, velocity):
+    new_position = point + velocity
+    return new_position
 
 
 @click.command()
@@ -90,63 +122,92 @@ def stop_condition(k, clusters, new_clusters, itr):
 @click.option('--ns', type=click.INT)
 def main(file, no_clusters, max_iterations, ns, itr):
     spark = SparkSession.builder.appName("KMeans - PSO").getOrCreate()
-    lines = spark.read.text(file).rdd.map(lambda r: r[0])
+    lines = spark.read.text(file).rdd.map(
+        lambda r: r[0])
     data_items = lines.map(parse_vector).cache()
+    zipped_date_items = data_items.zipWithIndex().map(lambda x: (x[1], x[0]))
     n = data_items.count()
     ns = ns or compute_ns(n, no_clusters)
 
-    nearest_neighbors = compute_nearest_neighbors(spark.sparkContext, data_items, ns)
+    knn_model = NearestNeighbors(n_neighbors=ns + 1, algorithm='kd_tree')
+    knn_model.fit(data_items.collect())
+    knn_model = spark.sparkContext.broadcast(knn_model)
+
+    nearest_neighbors = data_items \
+        .zipWithIndex() \
+        .map(lambda x: (x[1], computer_nn(knn_model, x[0])))
+
     kmeans_model = KMeans.train(data_items, no_clusters,
                                 maxIterations=max_iterations or 100, initializationMode='random')
-    squared_sigma = compute_squared_sigma(data_items, n, kmeans_model)
+    centroids = kmeans_model.clusterCenters
 
+    bc_kmeans_model = spark.sparkContext.broadcast(kmeans_model)
+    squared_sigma = compute_squared_sigma(data_items, n, kmeans_model)
+    #
     max_iterations = max_iterations or np.inf
     iterations = 0
     convergence_iterations = 0
-    positions = data_items.collect()
-    velocities = [0.0 for _ in range(n)]
-    personal_bests = [None for _ in range(n)]
-    global_bests = [None for _ in range(n)]
-    clusters = compute_clusters(positions, kmeans_model)
-    initial_clusters = clusters[:]
-    initial_centroids = kmeans_model.clusterCenters[:]
+    velocities = spark.sparkContext.parallelize([(i, 0.0) for i in range(n)])
+    clusters = zipped_date_items \
+        .map(lambda point: computer_clusters2(bc_kmeans_model, point[0], point[1])) \
+        .groupByKey() \
+        .map(lambda x: list(x[1]))
 
     while True:
-        for idx in range(n):
-            personal_bests[idx] = compute_personal_best(nearest_neighbors[idx][1], positions)
-            global_bests[idx] = compute_global_best(positions[idx], kmeans_model)
-            positions[idx], velocities[idx] = compute_position_velocity(
-                positions[idx], velocities[idx],
-                personal_bests[idx], global_bests[idx], squared_sigma
-            )
+        personal_bests = nearest_neighbors \
+            .flatMap(lambda row: [(row[0], y) for y in row[1]]) \
+            .map(lambda x: (x[1], x[0])) \
+            .join(zipped_date_items) \
+            .map(lambda x: (x[1][0], x[1][1])) \
+            .groupByKey() \
+            .mapValues(lambda points: list(points)) \
+            .map(lambda x: computer_personal_best2(x[0], x[1], ns)) \
+            .cache()
 
-        new_kmeans_model = KMeans.train(spark.sparkContext.parallelize(positions),
-                                        no_clusters, maxIterations=1, initialModel=kmeans_model)
-        new_clusters = compute_clusters(positions, new_kmeans_model)
-        convergence_iterations = stop_condition(no_clusters, clusters, new_clusters, convergence_iterations)
+        global_bests = zipped_date_items \
+            .mapValues(lambda point: computer_global_best2(bc_kmeans_model, point, centroids)) \
+            .cache()
+
+        velocities = velocities \
+            .join(zipped_date_items) \
+            .join(personal_bests) \
+            .mapValues(lambda x: (x[0][0], x[0][1], x[1])) \
+            .join(global_bests) \
+            .mapValues(lambda x: (x[0][0], x[0][1], x[0][2], x[1])) \
+            .mapValues(lambda x: computer_velocity(x, squared_sigma)) \
+            .cache()
+
+        zipped_date_items = zipped_date_items \
+            .join(velocities) \
+            .mapValues(lambda x: computer_new_point_position(x[0], x[1])) \
+            .cache()
+
+        new_positions = zipped_date_items\
+            .map(lambda x: x[1])\
+            .cache()
+
+        new_kmeans_model = KMeans.train(new_positions, no_clusters, maxIterations=1, initialModel=kmeans_model)
+        bc_new_kmeans_model = spark.sparkContext.broadcast(new_kmeans_model)
+        new_clusters = zipped_date_items \
+            .map(lambda point: computer_clusters2(bc_new_kmeans_model, point[0], point[1])) \
+            .groupByKey() \
+            .map(lambda x: list(x[1]))
+
+        convergence_iterations = stop_condition(no_clusters, clusters.collect(), new_clusters.collect(),
+                                                convergence_iterations)
         iterations += 1
-        # print("=" * 70, "Finished iteration {}".format(iterations))
-        # print('\nOld clusters')
-        # pprint(clusters)
-        # print('\nNew clusters')
-        # pprint(new_clusters)
-        # print('\nClusters identical for {} convergence iterations'.format(convergence_iterations))
         if convergence_iterations >= itr or iterations >= max_iterations:
             break
 
+        clusters = new_clusters
         kmeans_model = new_kmeans_model
-        clusters = new_clusters[:]
+        print("Itearation: {}".format(iterations))
 
-    print("\n\n======= Finished in {} iterations =======".format(iterations))
-    print('\nInitial k-means centroids:')
-    pprint(initial_centroids)
-    print("\nInitial k-means clusters:")
-    pprint(initial_clusters)
-    print('-' * 70)
-    print("\nFinal PSO k-means centroids")
+    print("Final PSO k-means centroids")
     pprint(kmeans_model.clusterCenters)
-    print("\nFinal PSO k-means clusters:")
+    print("Clusters")
     pprint(clusters)
+    spark.stop()
 
 
 if __name__ == '__main__':
