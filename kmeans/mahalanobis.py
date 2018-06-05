@@ -3,7 +3,6 @@ import numpy as np
 from pprint import pprint
 from pyspark.sql import SparkSession
 from scipy.spatial.distance import mahalanobis as sp_mahalanobis
-from kmeans.default import closest_point as euclidean_closest_point
 
 
 def parse_vector(line):
@@ -73,6 +72,19 @@ def preliminary_step(k, data_items):
         centroids[centroid_idx] = centroid
 
     return centroids, sk.collect()
+
+
+def euclidean_closest_point(point, centroids, k):
+    best_index = 0
+    smallest_dist = np.inf
+
+    for idx in range(k):
+        temp_dist = dist_euclidean(point, centroids[idx])
+        if temp_dist < smallest_dist:
+            smallest_dist = temp_dist
+            best_index = idx
+
+    return best_index
 
 
 def closest_point(point, centroids, cov_mat):
