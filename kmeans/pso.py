@@ -76,7 +76,6 @@ def compute_position_velocity(position, velocity, personal_best, global_best, sq
 
 def stop_condition(k, clusters, new_clusters, itr):
     for cluster_idx in range(k):
-        print(set(clusters[cluster_idx]), set(new_clusters[cluster_idx]))
         if set(clusters[cluster_idx]) != set(new_clusters[cluster_idx]):
             return 0
 
@@ -162,11 +161,11 @@ def main(file, no_clusters, max_iterations, ns, itr):
             .groupByKey() \
             .mapValues(lambda points: list(points)) \
             .map(lambda x: computer_personal_best2(x[0], x[1], ns)) \
-            .cache()
+            # .cache()
 
         global_bests = zipped_date_items \
             .mapValues(lambda point: computer_global_best2(bc_kmeans_model, point, centroids)) \
-            .cache()
+            # .cache()
 
         velocities = velocities \
             .join(zipped_date_items) \
@@ -175,16 +174,16 @@ def main(file, no_clusters, max_iterations, ns, itr):
             .join(global_bests) \
             .mapValues(lambda x: (x[0][0], x[0][1], x[0][2], x[1])) \
             .mapValues(lambda x: computer_velocity(x, squared_sigma)) \
-            .cache()
+            # .cache()
 
         zipped_date_items = zipped_date_items \
             .join(velocities) \
             .mapValues(lambda x: computer_new_point_position(x[0], x[1])) \
-            .cache()
+            # .cache()
 
         new_positions = zipped_date_items\
             .map(lambda x: x[1])\
-            .cache()
+            # .cache()
 
         new_kmeans_model = KMeans.train(new_positions, no_clusters, maxIterations=1, initialModel=kmeans_model)
         bc_new_kmeans_model = spark.sparkContext.broadcast(new_kmeans_model)
