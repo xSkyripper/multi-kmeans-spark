@@ -1,7 +1,9 @@
 import click
 import numpy as np
 import math
+import time
 
+from pyspark import StorageLevel
 from sklearn.neighbors import NearestNeighbors
 from pyspark.mllib.clustering import KMeans
 from pyspark.sql import SparkSession
@@ -113,6 +115,9 @@ def computer_new_point_position(point, velocity):
     return new_position
 
 
+NUM_PARTITIONS = 4
+
+
 @click.command()
 @click.option('-f', '--file', required=True)
 @click.option('-k', '--no-clusters', required=True, type=click.INT)
@@ -120,11 +125,15 @@ def computer_new_point_position(point, velocity):
 @click.option('--itr', required=True, type=click.INT)
 @click.option('--ns', type=click.INT)
 def main(file, no_clusters, max_iterations, ns, itr):
+    start_time = time.time()
     spark = SparkSession.builder.appName("KMeans - PSO").getOrCreate()
-    lines = spark.read.text(file).rdd.map(
-        lambda r: r[0])
-    data_items = lines.map(parse_vector).cache()
-    zipped_date_items = data_items.zipWithIndex().map(lambda x: (x[1], x[0]))
+    lines = spark.read.text(file).rdd.map(lambda r: r[0])
+    data_items = lines.map(parse_vector).persist()
+    zipped_date_items = data_items \
+        .zipWithIndex() \
+        .map(lambda x: (x[1], x[0])) \
+        .persist()
+
     n = data_items.count()
     ns = ns or compute_ns(n, no_clusters)
 
@@ -134,7 +143,8 @@ def main(file, no_clusters, max_iterations, ns, itr):
 
     nearest_neighbors = data_items \
         .zipWithIndex() \
-        .map(lambda x: (x[1], computer_nn(knn_model, x[0])))
+        .map(lambda x: (x[1], computer_nn(knn_model, x[0]))) \
+        .persist(StorageLevel.MEMORY_AND_DISK)
 
     kmeans_model = KMeans.train(data_items, no_clusters,
                                 maxIterations=max_iterations or 100, initializationMode='random')
@@ -142,55 +152,57 @@ def main(file, no_clusters, max_iterations, ns, itr):
 
     bc_kmeans_model = spark.sparkContext.broadcast(kmeans_model)
     squared_sigma = compute_squared_sigma(data_items, n, kmeans_model)
-    #
+
     max_iterations = max_iterations or np.inf
     iterations = 0
     convergence_iterations = 0
     velocities = spark.sparkContext.parallelize([(i, 0.0) for i in range(n)])
     clusters = zipped_date_items \
         .map(lambda point: computer_clusters2(bc_kmeans_model, point[0], point[1])) \
-        .groupByKey() \
-        .map(lambda x: list(x[1]))
+        .groupByKey(numPartitions=NUM_PARTITIONS) \
+        .map(lambda x: list(x[1])) \
+        .persist(StorageLevel.DISK_ONLY)
 
     while True:
         personal_bests = nearest_neighbors \
             .flatMap(lambda row: [(row[0], y) for y in row[1]]) \
             .map(lambda x: (x[1], x[0])) \
-            .join(zipped_date_items) \
+            .join(zipped_date_items, numPartitions=NUM_PARTITIONS) \
             .map(lambda x: (x[1][0], x[1][1])) \
-            .groupByKey() \
+            .groupByKey(numPartitions=NUM_PARTITIONS) \
             .mapValues(lambda points: list(points)) \
             .map(lambda x: computer_personal_best2(x[0], x[1], ns)) \
-            # .cache()
+            .cache()
+
 
         global_bests = zipped_date_items \
             .mapValues(lambda point: computer_global_best2(bc_kmeans_model, point, centroids)) \
             # .cache()
 
         velocities = velocities \
-            .join(zipped_date_items) \
-            .join(personal_bests) \
+            .join(zipped_date_items, numPartitions=NUM_PARTITIONS) \
+            .join(personal_bests, numPartitions=NUM_PARTITIONS) \
             .mapValues(lambda x: (x[0][0], x[0][1], x[1])) \
-            .join(global_bests) \
+            .join(global_bests, numPartitions=NUM_PARTITIONS) \
             .mapValues(lambda x: (x[0][0], x[0][1], x[0][2], x[1])) \
             .mapValues(lambda x: computer_velocity(x, squared_sigma)) \
             # .cache()
 
         zipped_date_items = zipped_date_items \
-            .join(velocities) \
+            .join(velocities, numPartitions=NUM_PARTITIONS) \
             .mapValues(lambda x: computer_new_point_position(x[0], x[1])) \
-            # .cache()
+            .cache()
 
-        new_positions = zipped_date_items\
-            .map(lambda x: x[1])\
-            # .cache()
+        new_positions = zipped_date_items \
+            .map(lambda x: x[1])
 
         new_kmeans_model = KMeans.train(new_positions, no_clusters, maxIterations=1, initialModel=kmeans_model)
         bc_new_kmeans_model = spark.sparkContext.broadcast(new_kmeans_model)
         new_clusters = zipped_date_items \
             .map(lambda point: computer_clusters2(bc_new_kmeans_model, point[0], point[1])) \
-            .groupByKey() \
-            .map(lambda x: list(x[1]))
+            .groupByKey(numPartitions=NUM_PARTITIONS) \
+            .map(lambda x: list(x[1])) \
+            .persist(StorageLevel.MEMORY_AND_DISK)
 
         convergence_iterations = stop_condition(no_clusters, clusters.collect(), new_clusters.collect(),
                                                 convergence_iterations)
@@ -200,7 +212,9 @@ def main(file, no_clusters, max_iterations, ns, itr):
 
         clusters = new_clusters
         kmeans_model = new_kmeans_model
-        print("Itearation: {}".format(iterations))
+        print("Iteration: {}".format(iterations))
+        print("Iteration Time: {}".format(time.time() - start_time))
+        start_time = time.time()
 
     print("Final PSO k-means centroids")
     pprint(kmeans_model.clusterCenters)
