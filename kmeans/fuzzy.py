@@ -1,5 +1,9 @@
+from pprint import pprint
+
 import click
 import numpy as np
+import time
+from pyspark import StorageLevel
 from pyspark.sql import SparkSession
 
 
@@ -58,28 +62,39 @@ def compute(d1, d2):
     return result
 
 
-def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations):
-    spark = SparkSession.builder.appName("KMeans - Fuzzy").getOrCreate()
-    lines = spark.read.text(input_file).rdd.map(lambda line: line[0])
-    data = lines.map(lambda x: parse_vector(x, ' ')).cache()
-    max_iterations = max_iterations or np.inf
+NUM_PARTITIONS = 4
 
-    # centroids = data.takeSample(False, number_of_clusters)
-    # centroids_delta_distance = 1.0
-    #
+
+def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations):
+    start_time = time.time()
+    spark = SparkSession.builder.appName("KMeans - Fuzzy").getOrCreate()
+    spark.sparkContext.setLogLevel("WARN")
+    lines = spark.read.text(input_file).rdd.map(lambda line: line[0]).persist()
+    data = lines \
+        .map(lambda x: parse_vector(x, ',')) \
+        .persist()
     n = data.count()
     dimensions = len(data.first())
-    membership_matrix = initialize_membership_instance(n, no_clusters)
 
-    membership_matrix = spark.sparkContext.parallelize(membership_matrix)
+    data = data \
+        .zipWithIndex() \
+        .map(lambda p: (p[1], p[0])) \
+        .persist(StorageLevel.MEMORY_AND_DISK)
+
+    max_iterations = max_iterations or np.inf
+
+    membership_matrix = initialize_membership_instance(n, no_clusters)
+    membership_matrix = spark \
+        .sparkContext \
+        .parallelize(membership_matrix) \
+        .zipWithIndex() \
+        .persist()
     # print("\nInitial membership matrix:")
     # pprint(membership_matrix.collect())
 
-    data = data.zipWithIndex().map(lambda p: (p[1], p[0]))
     # print("\nWith index points:")
     # pprint(data.collect())
 
-    membership_matrix = membership_matrix.zipWithIndex()
     previous_membership_matrix = membership_matrix.map(lambda x: (x[1], x[0]))
     # print("\nWith index membership matrix:")
     # pprint(membership_matrix.collect())
@@ -91,7 +106,7 @@ def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_it
         # print("\nFlattened membership matrix:")
         # pprint(membership_matrix.collect())
 
-        joined = data.join(membership_matrix)
+        joined = data.join(membership_matrix, numPartitions=NUM_PARTITIONS)
         # print("\nJoined points - membership matrix:")
         # pprint(joined.collect())
 
@@ -99,7 +114,7 @@ def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_it
         # print("\nRemapped join:")
         # pprint(mapped.collect())
 
-        grouped = mapped.groupByKey().map(lambda r: (r[0], list(r[1])))
+        grouped = mapped.groupByKey(numPartitions=NUM_PARTITIONS).map(lambda r: (r[0], list(r[1])))
         # print("\nGrouped:")
         # pprint(grouped.collect())
 
@@ -113,7 +128,7 @@ def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_it
 
         distances = cross_data_centroids \
             .map(lambda i_p_c: (i_p_c[0][0], (np.linalg.norm(i_p_c[0][1] - i_p_c[1])))) \
-            .reduceByKey(compute)
+            .reduceByKey(compute, numPartitions=NUM_PARTITIONS)
 
         new_membership = distances \
             .mapValues(lambda value: generate_computes(value)) \
@@ -124,7 +139,7 @@ def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_it
         # pprint(previous_membership_matrix.collect())
 
         previous_current_membership = new_membership \
-            .join(previous_membership_matrix)
+            .join(previous_membership_matrix, numPartitions=NUM_PARTITIONS)
 
         # print("Joined membership")
         # pprint(previous_current_membership.collect())
@@ -141,11 +156,17 @@ def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_it
             break
 
         previous_membership_matrix = new_membership
-        membership_matrix = new_membership.map(lambda x: (x[1], x[0]))
+        membership_matrix = new_membership \
+            .map(lambda x: (x[1], x[0])) \
+            .persist(StorageLevel.MEMORY_AND_DISK)
         iterations += 1
 
         print("Finished iteration: {}".format(iterations))
+        print("Iteration Time: {}".format(time.time() - start_time))
+        start_time = time.time()
 
+    print("Finished iteration: {}".format(iterations))
+    print("Iteration Time: {}".format(time.time() - start_time))
     spark.stop()
 
 
