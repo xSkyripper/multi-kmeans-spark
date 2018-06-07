@@ -8,10 +8,11 @@ from sklearn.neighbors import NearestNeighbors
 from pyspark.mllib.clustering import KMeans
 from pyspark.sql import SparkSession
 from pprint import pprint
+from kmeans.utils import plot_clusters
 
 
-def parse_vector(line):
-    return np.array([float(x) for x in line.split(',')])
+def parse_vector(line, delimiter):
+    return np.array([float(x) for x in line.split(delimiter)])
 
 
 def euclidean_distance(x1, x2):
@@ -118,24 +119,19 @@ def computer_new_point_position(point, velocity):
 NUM_PARTITIONS = 4
 
 
-@click.command()
-@click.option('-f', '--file', required=True)
-@click.option('-k', '--no-clusters', required=True, type=click.INT)
-@click.option('-i', '--max-iterations', type=click.INT)
-@click.option('--itr', required=True, type=click.INT)
-@click.option('--ns', type=click.INT)
-def main(file, no_clusters, max_iterations, ns, itr):
+def pso(input_file, delimiter, k, max_iterations, ns, itr, plot):
     start_time = time.time()
     spark = SparkSession.builder.appName("KMeans - PSO").getOrCreate()
-    lines = spark.read.text(file).rdd.map(lambda r: r[0])
-    data_items = lines.map(parse_vector).persist()
-    zipped_date_items = data_items \
-        .zipWithIndex() \
-        .map(lambda x: (x[1], x[0])) \
+    lines = spark.read.text(input_file).rdd.map(lambda r: r[0])
+    data_items = lines.map(lambda l: parse_vector(l, delimiter)).persist()
+
+    zipped_date_items = data_items\
+        .zipWithIndex()\
+        .map(lambda x: (x[1], x[0]))\
         .persist()
 
     n = data_items.count()
-    ns = ns or compute_ns(n, no_clusters)
+    ns = ns or compute_ns(n, k)
 
     knn_model = NearestNeighbors(n_neighbors=ns + 1, algorithm='kd_tree')
     knn_model.fit(data_items.collect())
@@ -146,7 +142,7 @@ def main(file, no_clusters, max_iterations, ns, itr):
         .map(lambda x: (x[1], computer_nn(knn_model, x[0]))) \
         .persist(StorageLevel.MEMORY_AND_DISK)
 
-    kmeans_model = KMeans.train(data_items, no_clusters,
+    kmeans_model = KMeans.train(data_items, k,
                                 maxIterations=max_iterations or 100, initializationMode='random')
     centroids = kmeans_model.clusterCenters
 
@@ -196,7 +192,7 @@ def main(file, no_clusters, max_iterations, ns, itr):
         new_positions = zipped_date_items \
             .map(lambda x: x[1])
 
-        new_kmeans_model = KMeans.train(new_positions, no_clusters, maxIterations=1, initialModel=kmeans_model)
+        new_kmeans_model = KMeans.train(new_positions, k, maxIterations=1, initialModel=kmeans_model)
         bc_new_kmeans_model = spark.sparkContext.broadcast(new_kmeans_model)
         new_clusters = zipped_date_items \
             .map(lambda point: computer_clusters2(bc_new_kmeans_model, point[0], point[1])) \
@@ -204,7 +200,7 @@ def main(file, no_clusters, max_iterations, ns, itr):
             .map(lambda x: list(x[1])) \
             .persist(StorageLevel.MEMORY_AND_DISK)
 
-        convergence_iterations = stop_condition(no_clusters, clusters.collect(), new_clusters.collect(),
+        convergence_iterations = stop_condition(k, clusters.collect(), new_clusters.collect(),
                                                 convergence_iterations)
         iterations += 1
         if convergence_iterations >= itr or iterations >= max_iterations:
@@ -220,7 +216,32 @@ def main(file, no_clusters, max_iterations, ns, itr):
     pprint(kmeans_model.clusterCenters)
     print("Clusters")
     pprint(clusters)
+
+    def plot_pso(data_items, centroids, clusters, k):
+        # TODO: implement this
+        data_items_indexed = []
+        centroids_indexed = []
+        clusters_indexed = []
+        k = 0
+
+        plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed, k)
+
+    if plot:
+        plot_pso() # add parameters
+
     spark.stop()
+
+
+@click.command()
+@click.option('-f', '--input-file', required=True)
+@click.option('-d', '--delimiter', default=' ')
+@click.option('-k', '--no-clusters', required=True, type=click.INT)
+@click.option('-i', '--max-iterations', type=click.INT)
+@click.option('--itr', required=True, type=click.INT)
+@click.option('--ns', type=click.INT)
+@click.option('--plot', is_flag=True)
+def main(input_file, delimiter, no_clusters, max_iterations, ns, itr, plot):
+    pso(input_file, delimiter, no_clusters, max_iterations, ns, itr, plot)
 
 
 if __name__ == '__main__':

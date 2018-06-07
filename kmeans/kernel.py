@@ -5,10 +5,11 @@ from matplotlib import pyplot as plt
 from matplotlib.pyplot import cm
 from pyspark.sql import SparkSession
 from pprint import pprint
+from kmeans.utils import plot_clusters
 
 
-def parse_vector(line):
-    return np.array([float(x) for x in line.split(' ')])
+def parse_vector(line, delimiter):
+    return np.array([float(x) for x in line.split(delimiter)])
 
 
 def init_random_clusters(data_items, k):
@@ -123,53 +124,10 @@ def compute_centroids(clusters, points):
     return centroids, joined
 
 
-def plot_clusters(maps, centroids, n, k):
-    clusters_data = maps.collect()
-    centroids_data = centroids.collect()
-
-    final_centroids = [[] for _ in range(k)]
-    for centroid_index, centroid in centroids_data:
-        final_centroids[centroid_index].extend(centroid)
-
-    final_clusters = [[] for _ in range(k)]
-    for centroid_index, point_ in clusters_data:
-        final_clusters[centroid_index].append(point_[0])
-
-    # pprint(final_centroids)
-    # pprint(final_clusters)
-
-    colors_iter = iter(cm.rainbow(np.linspace(0, 1, k)))
-    plt.figure("Kernel K-Means: Final clusters")
-    colors = cm.rainbow(np.linspace(0, 1, k * 2))
-    colors = random.sample(list(colors), k)
-    for cluster_index in range(k):
-        cluster_color = colors[cluster_index]
-        cluster_matrix = np.asmatrix(final_clusters[cluster_index])
-        centroids_matrix = np.asmatrix(final_centroids[cluster_index])
-
-        plt.scatter(
-            x=np.ravel(cluster_matrix[:, 0]),
-            y=np.ravel(cluster_matrix[:, 1]),
-            marker='.',
-            s=100,
-            c=cluster_color
-        )
-
-        plt.scatter(
-            x=np.ravel(centroids_matrix[:, 0]),
-            y=np.ravel(centroids_matrix[:, 1]),
-            marker='*',
-            s=400,
-            c=cluster_color,
-            edgecolors="black"
-        )
-    plt.show()
-
-
-def kernel(input_file, no_clusters, max_iterations):
+def kernel(input_file, delimiter, no_clusters, max_iterations, plot):
     spark = SparkSession.builder.appName('KMeans - Kernel').getOrCreate()
     lines = spark.read.text(input_file).rdd.map(lambda r: r[0])
-    data_items = lines.map(parse_vector).cache()
+    data_items = lines.map(lambda l: parse_vector(l, delimiter)).cache()
 
     n = data_items.count()
     max_iterations = max_iterations or np.inf
@@ -255,15 +213,28 @@ def kernel(input_file, no_clusters, max_iterations):
     centroids, maps = compute_centroids(clusters, data_items)
     # pprint(centroids.collect())
     # pprint(maps.collect())
-    plot_clusters(maps, centroids, n, no_clusters)
+
+    def plot_kernel(data_items, centroids, clusters, k):
+        # TODO: implement this
+        data_items_indexed = []
+        centroids_indexed = []
+        clusters_indexed = []
+        k = 0
+
+        plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed, k)
+
+    if plot:
+        plot_kernel(data_items, centroids, clusters, no_clusters)
 
 
 @click.command()
 @click.option('-f', '--input-file', required=True)
+@click.option('-d', '--delimiter', default=' ')
 @click.option('-k', '--no-clusters', required=True, type=click.INT)
 @click.option('-i', '--max-iterations', type=click.INT)
-def main(input_file, no_clusters, max_iterations):
-    kernel(input_file, no_clusters, max_iterations)
+@click.option('--plot', is_flag=True)
+def main(input_file, delimiter, no_clusters, max_iterations, plot):
+    kernel(input_file, delimiter, no_clusters, max_iterations, plot)
 
 
 if __name__ == '__main__':
