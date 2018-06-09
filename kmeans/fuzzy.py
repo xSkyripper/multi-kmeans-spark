@@ -1,10 +1,10 @@
-from pprint import pprint
-
 import click
 import numpy as np
 import time
+from pprint import pprint
 from pyspark import StorageLevel
 from pyspark.sql import SparkSession
+from kmeans.utils import plot_clusters
 
 
 def parse_vector(line, delim):
@@ -65,18 +65,18 @@ def compute(d1, d2):
 NUM_PARTITIONS = 4
 
 
-def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations):
+def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_level, max_iterations, plot):
     start_time = time.time()
     spark = SparkSession.builder.appName("KMeans - Fuzzy").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     lines = spark.read.text(input_file).rdd.map(lambda line: line[0]).persist()
-    data = lines \
-        .map(lambda x: parse_vector(x, ',')) \
+    data_items = lines\
+        .map(lambda x: parse_vector(x, delimiter)) \
         .persist()
-    n = data.count()
-    dimensions = len(data.first())
+    n = data_items.count()
+    dimensions = len(data_items.first())
 
-    data = data \
+    data_items = data_items \
         .zipWithIndex() \
         .map(lambda p: (p[1], p[0])) \
         .persist(StorageLevel.MEMORY_AND_DISK)
@@ -106,7 +106,7 @@ def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_it
         # print("\nFlattened membership matrix:")
         # pprint(membership_matrix.collect())
 
-        joined = data.join(membership_matrix, numPartitions=NUM_PARTITIONS)
+        joined = data_items.join(membership_matrix, numPartitions=NUM_PARTITIONS)
         # print("\nJoined points - membership matrix:")
         # pprint(joined.collect())
 
@@ -122,7 +122,7 @@ def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_it
         # print("\nCentroids matrix:")
         # pprint(centroids_data.collect())
 
-        cross_data_centroids = data.cartesian(centroids_data)
+        cross_data_centroids = data_items.cartesian(centroids_data)
         # print("Cartesian data - centroids")
         # pprint(cross_data_centroids.collect())
 
@@ -169,15 +169,45 @@ def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_it
     print("Iteration Time: {}".format(time.time() - start_time))
     spark.stop()
 
+    def plot_fuzzy(data_items, centroids, membership_matrix, k):
+        print('Data items indexed')
+        data_items_indexed = data_items \
+            .collect()
+        pprint(data_items_indexed)
+
+        print("Membership matrix")
+        clusters_indexed = membership_matrix \
+            .groupByKey() \
+            .map(lambda x: (max(list(x[1]))[1], x[0])) \
+            .groupByKey() \
+            .map(lambda x: (x[0], list(x[1]))) \
+            .collect()
+        pprint(clusters_indexed)
+
+        print("Centroids indexed")
+        centroids_indexed = centroids \
+            .zipWithIndex() \
+            .map(lambda x: (x[1], x[0])) \
+            .collect()
+        pprint(centroids_indexed)
+
+        plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed,
+                      'Fuzzy')
+
+    if plot:
+        plot_fuzzy(data_items, centroids_data, membership_matrix, no_clusters)
+
 
 @click.command()
 @click.option('-f', '--input-file', required=True)
+@click.option('-d', '--delimiter', default=' ')
 @click.option('-k', '--no-clusters', required=True, type=click.INT)
 @click.option('-c', '--convergence-distance', required=True, type=click.FLOAT)
 @click.option('-m', '--fuzziness-level', required=True, type=click.FLOAT)
 @click.option('-i', '--max-iterations', type=click.INT)
-def main(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations):
-    fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations)
+@click.option('--plot', is_flag=True)
+def main(input_file, delimiter, no_clusters, convergence_distance, fuzziness_level, max_iterations, plot):
+    fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_level, max_iterations, plot)
 
 
 if __name__ == '__main__':

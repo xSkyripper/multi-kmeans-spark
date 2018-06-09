@@ -1,1 +1,1 @@
-"D:\Python Envs\Python3\SparkEnv\Scripts\python.exe" -m kmeans.cop -f tmp/ds_cop_big.txt -k 5 -c 0.01 -cop tmp/ds_cop_constraints_big.txt
+"D:\Python Envs\Python3\SparkEnv\Scripts\python.exe" -m kmeans.cop -f tmp/ds_cop_small.txt -d " " -k 5 -c 0.01 -cop tmp/ds_cop_constraints_small.txt -i 100
