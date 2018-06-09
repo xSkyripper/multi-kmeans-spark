@@ -1,6 +1,8 @@
 import click
 import numpy as np
 from pprint import pprint
+
+import time
 from pyspark.sql import SparkSession
 from scipy.spatial.distance import mahalanobis as sp_mahalanobis
 
@@ -113,7 +115,11 @@ def closest_point(point, centroids, cov_mat):
     return best_index
 
 
+NUM_PARTITIONS = 4
+
+
 def mahalanobis(input_file, no_clusters, convergence_dist, max_iterations):
+    start_time = time.time()
     spark = SparkSession.builder.appName('KMeans - Mahalanobis Distance').getOrCreate()
     lines = spark.read.text(input_file).rdd.map(lambda r: r[0])
     data_items = lines.map(parse_vector).cache()
@@ -144,6 +150,8 @@ def mahalanobis(input_file, no_clusters, convergence_dist, max_iterations):
 
         iterations += 1
         print("Iteration {} done".format(iterations))
+        print("Iteration Time {}".format(time.time() - start_time))
+        start_time = time.time()
 
     print("Final centroids in {} iterations:".format(iterations))
     pprint(centroids)

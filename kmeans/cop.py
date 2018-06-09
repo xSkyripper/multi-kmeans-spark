@@ -1,8 +1,8 @@
 import click
 import numpy as np
+import time
 from pyspark.sql import SparkSession
 from pprint import pprint
-
 
 MUST_LINK = 1
 CANNOT_LINK = -1
@@ -103,21 +103,19 @@ def compute_new_centroids(points):
 
 
 def cop(input_file, constraints_file, no_clusters, convergence_distance, max_iterations):
+    start_time = time.time()
     spark = SparkSession.builder.appName("KMeans - COP").getOrCreate()
     max_iterations = max_iterations or np.inf
-
     points = spark.read.text(input_file).rdd \
         .map(lambda r: r[0]) \
         .map(parse_vector) \
+        .zipWithIndex() \
+        .map(lambda x: (x[1], x[0])) \
         .cache()
 
     centroids = points.takeSample(False, no_clusters)
     print("Initial centroids")
     pprint(centroids)
-    points = points \
-        .zipWithIndex() \
-        .map(lambda x: (x[1], x[0])) \
-        .cache()
     # print("Points")
     # pprint(points.collect())
     # pprint("Number of points:{}".format(points.count()))
@@ -128,7 +126,7 @@ def cop(input_file, constraints_file, no_clusters, convergence_distance, max_ite
         .map(lambda x: (x[2], (x[0], x[1]))) \
         .groupByKey() \
         .map(lambda x: (x[0], np.array(list(x[1])))) \
-        .cache()
+        .persist()
     # print("Constraints")
     constrais_p = constraints_point.collectAsMap()
     must_link_graph, cannot_link_graph = transitive_closure(constrais_p, points.count())
@@ -147,8 +145,8 @@ def cop(input_file, constraints_file, no_clusters, convergence_distance, max_ite
         count2 += len(links)
 
     iterations = 0
+    previous_converge_distance = np.inf
     while iterations < max_iterations:
-        print("Iteration: {}".format(iterations))
         point_to_centroids = points.map(lambda point: (point[0], distance_to_centroids(point, centroids)))
         aux = point_to_centroids.collect()
 
@@ -186,18 +184,29 @@ def cop(input_file, constraints_file, no_clusters, convergence_distance, max_ite
 
         print("New Centroids")
         pprint(new_centroids)
-        pprint(len(new_centroids))
 
-        centroids_delta_dist = sum(np.sum((centroids[index] - p) ** 2) for index, p in new_centroids)
+        centroids_delta_dist = sum(np.sum((centroids[index][1] - p) ** 2) for index, p in new_centroids)
         for index, point in new_centroids:
+            print(type(point))
             if type(point) is float:
                 point = np.zeros(shape=(1, 4))
-            centroids[index] = point
+                centroids[index] = point
 
         iterations += 1
         print(centroids_delta_dist)
-        if centroids_delta_dist < convergence_distance:
+        if centroids_delta_dist < convergence_distance or centroids_delta_dist == previous_converge_distance:
             break
+
+        previous_converge_distance = centroids_delta_dist
+        centroids = new_centroids
+
+        print("Finished iteration: {}".format(iterations))
+        print("Iteration Time: {}".format(time.time() - start_time))
+        start_time = time.time()
+
+    print("Finished iteration: {}".format(iterations))
+    print("Iteration Time: {}".format(time.time() - start_time))
+    start_time = time.time()
 
     spark.stop()
 
