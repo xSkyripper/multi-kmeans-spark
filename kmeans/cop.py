@@ -8,6 +8,8 @@ from kmeans.utils import plot_clusters
 MUST_LINK = 1
 CANNOT_LINK = -1
 
+dimension = 0
+
 
 def parse_vector(line, delimiter):
     return np.array([float(x) for x in line.split(delimiter)])
@@ -72,7 +74,6 @@ def transitive_closure(constraints: dict, n):
 
 def distance_to_centroids(point, centroids):
     distances = dict()
-
     for i in range(len(centroids)):
         distance = np.sum((point[1] - centroids[i][1]) ** 2)
         distances[i] = distance
@@ -96,8 +97,8 @@ def violates_constraints(point_index, cluster_index, point_to_cluster_assignment
 
 
 def compute_new_centroids(points):
-    new_point = 0
-    for i in range(1, len(points)):
+    new_point = np.zeros(shape=(1, dimension))
+    for i in range(len(points)):
         new_point += points[i]
 
     return new_point / len(points)
@@ -113,6 +114,9 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
         .zipWithIndex() \
         .map(lambda x: (x[1], x[0])) \
         .cache()
+    global dimension
+    dimension = len(points.first()[1])
+    print("Number of dimensions: {}".format(dimension))
 
     centroids = points.takeSample(False, no_clusters)
     print("Initial centroids")
@@ -147,6 +151,8 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
 
     iterations = 0
     previous_converge_distance = np.inf
+    point_to_cluster_assignment = [-1] * points.count()
+
     while iterations < max_iterations:
         point_to_centroids = points.map(lambda point: (point[0], distance_to_centroids(point, centroids)))
         aux = point_to_centroids.collect()
@@ -180,7 +186,7 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
             .map(lambda x: (x[1][0], np.array(x[1][1]))) \
             .groupByKey() \
             .map(lambda x: (x[0], list(x[1]))) \
-            .map(lambda x: (x[0], compute_new_centroids(x[1]))) \
+            .map(lambda x: [x[0], compute_new_centroids(x[1])]) \
             .collect()
 
         print("New Centroids")
@@ -190,15 +196,16 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
         for index, point in new_centroids:
             print(type(point))
             if type(point) is float:
-                point = np.zeros(shape=(1, 4))
-                centroids[index] = point
+                point = np.zeros(shape=(1, dimension))
+
+            new_centroids[index][1] = point
 
         iterations += 1
         print(centroids_delta_dist)
         if centroids_delta_dist < convergence_distance or centroids_delta_dist == previous_converge_distance:
             break
 
-        centroids = new_centroids
+        centroids = new_centroids  # If this line is commented, points that will swap the clusters
         previous_converge_distance = centroids_delta_dist
 
         print("Finished iteration: {}".format(iterations))
@@ -209,16 +216,38 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
     print("Iteration Time: {}".format(time.time() - start_time))
 
     def plot_cop(data_items, centroids, clusters, k):
-        # TODO: implement this
+        data_items = data_items.collect()
+
+        from sklearn.manifold import TSNE
+        points_embedded = list(map(lambda x: x[1], data_items))
+        points_embedded = TSNE(n_components=2).fit_transform(points_embedded)
         data_items_indexed = []
+        for index, point in enumerate(points_embedded):
+            data_items_indexed.append((index, point))
+
+        empty_clusters = no_clusters - len(centroids)
+        for i in range(empty_clusters):
+            centroids.append(np.zeros(shape=(1, dimension)))
+
+        centroids_embedded = list(map(lambda x: x[1][0], centroids))
+        print("Centroids")
+        pprint(centroids_embedded)
+        centroids_embedded = TSNE(n_components=2).fit_transform(centroids_embedded)
         centroids_indexed = []
-        clusters_indexed = []
-        k = 0
+        for index, centroid in enumerate(centroids_embedded):
+            centroids_indexed.append((index, centroid))
 
-        plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed, k)
+        point_to_cluster_assignment = clusters \
+            .zipWithIndex() \
+            .map(lambda x: (x[0][0], x[1])) \
+            .groupByKey() \
+            .mapValues(lambda indexes: list(indexes)) \
+            .collect()
 
-    # if plot:
-    #     plot_cop()  # add parameters
+        plot_clusters(data_items, centroids, point_to_cluster_assignment, k)
+
+    if plot:
+        plot_cop(points, centroids, point_to_cluster_assignment, no_clusters)  # add parameters
 
     spark.stop()
 
