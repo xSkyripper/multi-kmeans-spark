@@ -70,7 +70,7 @@ def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_le
     spark = SparkSession.builder.appName("KMeans - Fuzzy").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     lines = spark.read.text(input_file).rdd.map(lambda line: line[0]).persist()
-    data_items = lines\
+    data_items = lines \
         .map(lambda x: parse_vector(x, delimiter)) \
         .persist()
     n = data_items.count()
@@ -167,7 +167,6 @@ def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_le
 
     print("Finished iteration: {}".format(iterations))
     print("Iteration Time: {}".format(time.time() - start_time))
-    spark.stop()
 
     def plot_fuzzy(data_items, centroids, membership_matrix, k):
         print('Data items indexed')
@@ -196,6 +195,8 @@ def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_le
 
     if plot:
         plot_fuzzy(data_items, centroids_data, membership_matrix, no_clusters)
+
+    spark.stop()
 
 
 @click.command()
