@@ -1,0 +1,1 @@
+"D:\Python Envs\Python3\SparkEnv\Scripts\python.exe" -m kmeans.mahalanobis -f tmp\ds_kernel_small.txt -k 2 -c 0.01 -i 100 --plot
