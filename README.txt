@@ -28,7 +28,9 @@ There is a set of necessary steps that need to be done before running the K-Mean
     $ python3 -m venv venv
 4. Activate venv:
     $ source venv/bin/activate
-5. Run the algorithms. Examples:
+5. Install requirements:
+    $ pip install -r requirements.txt
+6. Run the algorithms. Examples:
     $ python -m kmeans.default -f data/ds_cop_small.txt -k 2 -c 0.05
     $ python -m kmeans.mahalanobis -k 2 -c 0.1 -f data/ds_kernel_small.txt -i 50
     $ python -m kmeans.fuzzy -k 2 -c 0.01 -m 1.25 -f data/ds_kernel_small.txt
@@ -42,7 +44,7 @@ There is a set of necessary steps that need to be done before running the K-Mean
 = Dataproc =
 1. Install google-cloud-sdk and setup the profile and project
 2. Create the Google Storage buckets and upload input data there (multi-kmeans is ours)
-2. Run the cluster creation command based on the custom Conda script
+3. Run the cluster creation command based on the custom Conda script
 (after you upload it to Google Storage):
       $ gcloud dataproc clusters create multi-kmeans-cluster \
             --bucket multi-kmeans \
@@ -54,9 +56,9 @@ There is a set of necessary steps that need to be done before running the K-Mean
             --worker-machine-type n1-standard-8 \
             --num-workers 4 \
             --initialization-actions gs://multi-kmeans/src/create_my_cluster.sh
-3. SSH on the master node (multi-kmeans-cluster-m)
-4. Clone the repository and 'cd' into it
-4. Run the commands.
+4. SSH on the master node (multi-kmeans-cluster-m)
+5. Clone the repository and 'cd' into it
+6. Run the commands.
     # All of the commands below are almost the same as the local ones
     (only difference is the file execution and not python module and the input data is from gs://)
     # Examples:
