@@ -55,25 +55,19 @@ def default(input_file, delimiter, k, convergence_dist, max_iterations, plot):
 
     def plot_default(data_items, centroids, clusters, k):
         # preparing data for plotting
-        print('Data items indexed')
         data_items_indexed = data_items\
             .zipWithIndex()\
             .map(lambda x: (x[1], x[0]))\
             .collect()
-        pprint(data_items_indexed)
 
-        print('Centroids indexed')
         centroids_indexed = list(zip([i for i in range(k)], centroids))
-        pprint(centroids_indexed)
 
-        print('Clusters indexed')
-        clusters_indexed = closest\
+        clusters_indexed = clusters\
             .zipWithIndex()\
             .map(lambda x: (x[0][0], x[1]))\
             .groupByKey()\
             .map(lambda x: (x[0], list(x[1])))\
             .collect()
-        pprint(clusters_indexed)
 
         plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed,
                       'Default PySparkless')

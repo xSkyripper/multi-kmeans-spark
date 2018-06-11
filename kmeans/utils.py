@@ -1,8 +1,6 @@
-import random
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.pyplot import cm
-from pprint import pprint
 
 
 def main():
@@ -25,7 +23,6 @@ def plot_clusters(data_items, centroids, clusters, title):
 
     plt.figure("K-Means: {}".format(title))
     lspace = np.linspace(0.0, 1.0, k * 2)
-    pprint(lspace)
     colors = cm.rainbow(lspace)
 
     for cluster_index in range(k):

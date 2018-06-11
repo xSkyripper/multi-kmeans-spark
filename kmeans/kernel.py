@@ -1,10 +1,7 @@
-import random
 import click
 import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib.pyplot import cm
-from pyspark.sql import SparkSession
 from pprint import pprint
+from pyspark.sql import SparkSession
 from kmeans.utils import plot_clusters
 
 
@@ -79,8 +76,6 @@ def stop_condition(clusters, new_clusters, iteration, max_iterations, k):
     clusters_data = clusters.collect()
     new_clusters_data = new_clusters.collect()
 
-    # pprint(clusters_data)
-    # pprint(new_clusters_data)
     sorted_clusters = [[] for _ in range(k)]
     sorted_new_clusters = [[] for _ in range(k)]
 
@@ -104,8 +99,6 @@ def stop_condition(clusters, new_clusters, iteration, max_iterations, k):
         converged = converged and converged_cluster
         if not converged:
             break
-
-    # print("Converged? ", converged)
 
     return converged or max_iterations <= iteration
 
@@ -135,96 +128,57 @@ def kernel(input_file, delimiter, no_clusters, max_iterations, plot):
     kernel_values = init_kernel_matrix(data_items, 4)
     kernel_matrix = np.array(kernel_values.collect()).reshape(n, n)
     bc_kernel_matrix = spark.sparkContext.broadcast(kernel_matrix)
-    # print("\nKernel matrix")
-    # pprint(kernel_matrix)
 
     clusters = init_random_clusters(data_items, no_clusters)
-    # print("\nInit random Clusters")
-    # pprint(clusters.collect())
-
-    # grouped_by_cluster = clusters.groupByKey().map(lambda c_pts: (c_pts[0], list(c_pts[1])))
-    # print("\nGrouped by cluster")
-    # pprint(grouped_by_cluster.collect())
-    #
-    # term3_by_cluster = grouped_by_cluster.map(lambda c_pts: (c_pts[0], compute_term_3(c_pts[1], bc_kernel_matrix.value)))
-    # print("\nTerm 3 by cluster")
-    # pprint(term3_by_cluster.collect())
-    #
-    # terms2_by_cluster = grouped_by_cluster.map(lambda c_pts: (c_pts[0], compute_terms_2(c_pts[1], bc_kernel_matrix.value, n)))
-    # print("\nTerms 2 by cluster - all points")
-    # pprint(terms2_by_cluster.collect())
-    #
-    # joined = term3_by_cluster.join(terms2_by_cluster)
-    # print("\nJoined terms2 - terms 3")
-    # pprint(joined.collect())
-    #
-    # distances = joined.flatMap(lambda c_g: compute_distances_point_cluster(c_g[0], c_g[1]))
-    # print("\nDistances")
-    # pprint(distances.collect())
-    #
-    # new_assigns = distances.reduceByKey(lambda c1_d1, c2_d2: min(c1_d1, c2_d2, key=lambda c_d: c_d[1]))
-    # print("\nExperiment")
-    # pprint(new_assigns.collect())
 
     clusters = clusters.groupByKey().map(lambda c_pts: (c_pts[0], list(c_pts[1])))
-    # print("\nGrouped by cluster")
-    # pprint(clusters.collect())
 
     iteration = 0
     while True:
         print("Iteration {} ...".format(iteration))
         term3_by_cluster = clusters.map(
             lambda c_pts: (c_pts[0], compute_term_3(c_pts[1], bc_kernel_matrix.value)))
-        # print("\nTerm 3 by cluster")
-        # pprint(term3_by_cluster.collect())
 
         terms2_by_cluster = clusters.map(
             lambda c_pts: (c_pts[0], compute_terms_2(c_pts[1], bc_kernel_matrix.value, n)))
-        # print("\nTerms 2 by cluster - all points")
-        # pprint(terms2_by_cluster.collect())
 
         joined = term3_by_cluster.join(terms2_by_cluster)
-        # print("\nJoined terms2 - terms 3")
-        # pprint(joined.collect())
 
         distances = joined.flatMap(lambda c_g: compute_distances_point_cluster(c_g[0], c_g[1]))
-        # print("\nDistances")
-        # pprint(distances.collect())
 
         new_assigns = distances.reduceByKey(lambda c1_d1, c2_d2: min(c1_d1, c2_d2, key=lambda c_d: c_d[1])).collect()
-        # print('\nNew assigns')
-        # pprint(new_assigns)
 
         new_clusters = [[i, []] for i in range(no_clusters)]
         for point_index, cluster_distance in new_assigns:
             new_clusters[cluster_distance[0]][1].append(point_index)
 
-        # print('\nNew clusters')
         new_clusters = spark.sparkContext.parallelize(new_clusters)
-        # pprint(new_clusters.collect())
 
         iteration += 1
-        # print("\n\n==========================================================")
         if stop_condition(clusters, new_clusters, iteration, max_iterations, no_clusters):
             break
 
         clusters = new_clusters
 
     centroids, maps = compute_centroids(clusters, data_items)
-    # pprint(centroids.collect())
-    # pprint(maps.collect())
 
-    def plot_kernel(data_items, centroids, clusters, k):
-        # TODO: implement this
-        data_items_indexed = []
-        centroids_indexed = []
-        clusters_indexed = []
-        k = 0
+    def plot_kernel(data_items, centroids, clusters):
+        data_items_indexed = data_items\
+            .zipWithIndex()\
+            .map(lambda x: (x[1], x[0]))\
+            .collect()
 
-        plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed, k)
+        centroids_indexed = centroids\
+            .collect()
+
+        clusters_indexed = clusters\
+            .collect()
+
+        plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed,
+                      'Kernel')
 
     if plot:
-        plot_kernel(data_items, centroids, clusters, no_clusters)
+        plot_kernel(data_items, centroids, clusters)
 
 
 @click.command()

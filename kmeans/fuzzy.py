@@ -43,7 +43,6 @@ def compute_membership(line, m):
         result = 0
         d_i_j = cell[0]
         for d_k_j in cell[1]:
-            # print("{} ======= {}".format(d_i_j, d_k_j))
             result += (d_i_j / d_k_j) ** (2 / m - 1)
 
         results.append(1 / result)
@@ -89,42 +88,23 @@ def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_le
         .parallelize(membership_matrix) \
         .zipWithIndex() \
         .persist()
-    # print("\nInitial membership matrix:")
-    # pprint(membership_matrix.collect())
-
-    # print("\nWith index points:")
-    # pprint(data.collect())
 
     previous_membership_matrix = membership_matrix.map(lambda x: (x[1], x[0]))
-    # print("\nWith index membership matrix:")
-    # pprint(membership_matrix.collect())
 
     iterations = 0
     while True:
 
         membership_matrix = membership_matrix.flatMap(lambda row: [(row[1], (u, k)) for k, u in enumerate(row[0])])
-        # print("\nFlattened membership matrix:")
-        # pprint(membership_matrix.collect())
 
         joined = data_items.join(membership_matrix, numPartitions=NUM_PARTITIONS)
-        # print("\nJoined points - membership matrix:")
-        # pprint(joined.collect())
 
         mapped = joined.map(lambda r: (r[1][1][1], (r[1][0], r[1][1][0])))
-        # print("\nRemapped join:")
-        # pprint(mapped.collect())
 
         grouped = mapped.groupByKey(numPartitions=NUM_PARTITIONS).map(lambda r: (r[0], list(r[1])))
-        # print("\nGrouped:")
-        # pprint(grouped.collect())
 
         centroids_data = grouped.map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
-        # print("\nCentroids matrix:")
-        # pprint(centroids_data.collect())
 
         cross_data_centroids = data_items.cartesian(centroids_data)
-        # print("Cartesian data - centroids")
-        # pprint(cross_data_centroids.collect())
 
         distances = cross_data_centroids \
             .map(lambda i_p_c: (i_p_c[0][0], (np.linalg.norm(i_p_c[0][1] - i_p_c[1])))) \
@@ -134,20 +114,11 @@ def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_le
             .mapValues(lambda value: generate_computes(value)) \
             .mapValues(lambda value: compute_membership(value, fuzziness_level))
 
-        #
-        # print("Old Membership Matrix")
-        # pprint(previous_membership_matrix.collect())
-
         previous_current_membership = new_membership \
             .join(previous_membership_matrix, numPartitions=NUM_PARTITIONS)
 
-        # print("Joined membership")
-        # pprint(previous_current_membership.collect())
-
         previous_current_difference_membership = previous_current_membership \
             .mapValues(lambda value: np.linalg.norm(value[0] - value[1], ord=1))
-        # print("Difference Membership")
-        # pprint(previous_current_difference_membership.collect())
 
         max_difference = previous_current_difference_membership.max(lambda x: x[1])
         print("Max difference")
@@ -168,13 +139,10 @@ def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_le
     print("Finished iteration: {}".format(iterations))
     print("Iteration Time: {}".format(time.time() - start_time))
 
-    def plot_fuzzy(data_items, centroids, membership_matrix, k):
-        print('Data items indexed')
+    def plot_fuzzy(data_items, centroids, membership_matrix):
         data_items_indexed = data_items \
             .collect()
-        pprint(data_items_indexed)
 
-        print("Membership matrix")
         clusters_indexed = membership_matrix \
             .groupByKey() \
             .map(lambda x: (max(list(x[1]))[1], x[0])) \
@@ -183,18 +151,16 @@ def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_le
             .collect()
         pprint(clusters_indexed)
 
-        print("Centroids indexed")
         centroids_indexed = centroids \
             .zipWithIndex() \
             .map(lambda x: (x[1], x[0])) \
             .collect()
-        pprint(centroids_indexed)
 
         plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed,
                       'Fuzzy')
 
     if plot:
-        plot_fuzzy(data_items, centroids_data, membership_matrix, no_clusters)
+        plot_fuzzy(data_items, centroids_data, membership_matrix)
 
     spark.stop()
 

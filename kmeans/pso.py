@@ -217,17 +217,24 @@ def pso(input_file, delimiter, k, max_iterations, ns, itr, plot):
     print("Clusters")
     pprint(clusters)
 
-    def plot_pso(data_items, centroids, clusters, k):
-        # TODO: implement this
-        data_items_indexed = []
-        centroids_indexed = []
-        clusters_indexed = []
-        k = 0
+    def plot_pso(data_items, centroids, clusters):
+        data_items_indexed = data_items\
+            .sortByKey()\
+            .collect()
 
-        plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed, k)
+        centroids_indexed = [(centroid_idx, centroid)
+                             for centroid_idx, centroid in enumerate(centroids)]
+
+        clusters_indexed = clusters\
+            .zipWithIndex()\
+            .map(lambda x: (x[1], x[0]))\
+            .collect()
+
+        plot_clusters(data_items_indexed, centroids_indexed, clusters_indexed,
+                      'Particle Swarm Optimization')
 
     if plot:
-        plot_pso() # add parameters
+        plot_pso(zipped_date_items, kmeans_model.clusterCenters, clusters)
 
     spark.stop()
 

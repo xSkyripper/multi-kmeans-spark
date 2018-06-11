@@ -121,9 +121,6 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
     centroids = points.takeSample(False, no_clusters)
     print("Initial centroids")
     pprint(centroids)
-    # print("Points")
-    # pprint(points.collect())
-    # pprint("Number of points:{}".format(points.count()))
 
     constraints_point = spark.read.text(constraints_file).rdd \
         .map(lambda r: r[0]) \
@@ -132,14 +129,9 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
         .groupByKey() \
         .map(lambda x: (x[0], np.array(list(x[1])))) \
         .persist()
-    # print("Constraints")
+
     constrais_p = constraints_point.collectAsMap()
     must_link_graph, cannot_link_graph = transitive_closure(constrais_p, points.count())
-    # print("Must Link Graph")
-    # pprint(must_link_graph)
-    # print("============================")
-    # print("Cannot Link Graph")
-    # pprint(cannot_link_graph)
 
     count1 = 0
     for links in must_link_graph.values():
@@ -215,7 +207,7 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
     print("Finished iteration: {}".format(iterations))
     print("Iteration Time: {}".format(time.time() - start_time))
 
-    def plot_cop(data_items, centroids, clusters, k):
+    def plot_cop(data_items, centroids, clusters):
         data_items = data_items.collect()
 
         from sklearn.manifold import TSNE
@@ -244,10 +236,11 @@ def cop(input_file, delimiter, constraints_file, no_clusters, convergence_distan
             .mapValues(lambda indexes: list(indexes)) \
             .collect()
 
-        plot_clusters(data_items, centroids, point_to_cluster_assignment, k)
+        plot_clusters(data_items, centroids, point_to_cluster_assignment,
+                      'Constraints Based')
 
     if plot:
-        plot_cop(points, centroids, point_to_cluster_assignment, no_clusters)  # add parameters
+        plot_cop(points, centroids, point_to_cluster_assignment)
 
     spark.stop()
 
