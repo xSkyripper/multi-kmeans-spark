@@ -115,7 +115,7 @@ def computer_new_point_position(point, velocity):
     return new_position
 
 
-NUM_PARTITIONS = 4
+NUM_PARTITIONS = 16
 
 
 @click.command()

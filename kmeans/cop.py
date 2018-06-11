@@ -1,4 +1,5 @@
 import click
+import time
 import numpy as np
 from pyspark.sql import SparkSession
 from pprint import pprint
@@ -103,6 +104,7 @@ def compute_new_centroids(points):
 
 
 def cop(input_file, constraints_file, no_clusters, convergence_distance, max_iterations):
+    start_time = time.time()
     spark = SparkSession.builder.appName("KMeans - COP").getOrCreate()
     max_iterations = max_iterations or np.inf
 
@@ -196,6 +198,10 @@ def cop(input_file, constraints_file, no_clusters, convergence_distance, max_ite
 
         iterations += 1
         print(centroids_delta_dist)
+        print("Finished iteration: {}".format(iterations))
+        print("Iteration time: {}".format(time.time()-start_time))
+        start_time = time.time()
+
         if centroids_delta_dist < convergence_distance:
             break
 

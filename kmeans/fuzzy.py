@@ -62,7 +62,7 @@ def compute(d1, d2):
     return result
 
 
-NUM_PARTITIONS = 4
+NUM_PARTITIONS = 8
 
 
 def fuzzy(input_file, no_clusters, convergence_distance, fuzziness_level, max_iterations):
