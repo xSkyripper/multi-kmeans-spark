@@ -41,7 +41,6 @@ def default(input_file, delimiter, k, convergence_dist, max_iterations, plot):
         closest = data_items.map(lambda p: (closest_point(p, centroids, k), (p, 1)))
         point_stats = closest.reduceByKey(lambda p1_c1, p2_c2: (p1_c1[0] + p2_c2[0], p1_c1[1] + p2_c2[1]))
         new_points = point_stats.map(lambda st: (st[0], st[1][0] / st[1][1])).collect()
-
         centroids_delta_dist = sum(np.sum((centroids[iK] - p) ** 2) for (iK, p) in new_points)
 
         for (iK, p) in new_points:

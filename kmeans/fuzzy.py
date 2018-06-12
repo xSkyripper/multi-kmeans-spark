@@ -96,13 +96,11 @@ def fuzzy(input_file, delimiter, no_clusters, convergence_distance, fuzziness_le
 
         membership_matrix = membership_matrix.flatMap(lambda row: [(row[1], (u, k)) for k, u in enumerate(row[0])])
 
-        joined = data_items.join(membership_matrix, numPartitions=NUM_PARTITIONS)
-
-        mapped = joined.map(lambda r: (r[1][1][1], (r[1][0], r[1][1][0])))
-
-        grouped = mapped.groupByKey(numPartitions=NUM_PARTITIONS).map(lambda r: (r[0], list(r[1])))
-
-        centroids_data = grouped.map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
+        centroids_data = data_items \
+            .join(membership_matrix, numPartitions=NUM_PARTITIONS) \
+            .map(lambda r: (r[1][1][1], (r[1][0], r[1][1][0]))) \
+            .groupByKey(numPartitions=NUM_PARTITIONS).map(lambda r: (r[0], list(r[1]))) \
+            .map(lambda r: (compute_centroid(r[1], fuzziness_level, dimensions)))
 
         cross_data_centroids = data_items.cartesian(centroids_data)
 

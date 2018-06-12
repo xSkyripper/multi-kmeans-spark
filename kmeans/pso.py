@@ -170,10 +170,8 @@ def pso(input_file, delimiter, k, max_iterations, ns, itr, plot):
             .map(lambda x: computer_personal_best2(x[0], x[1], ns)) \
             .cache()
 
-
         global_bests = zipped_date_items \
             .mapValues(lambda point: computer_global_best2(bc_kmeans_model, point, centroids)) \
-            # .cache()
 
         velocities = velocities \
             .join(zipped_date_items, numPartitions=NUM_PARTITIONS) \
@@ -182,7 +180,6 @@ def pso(input_file, delimiter, k, max_iterations, ns, itr, plot):
             .join(global_bests, numPartitions=NUM_PARTITIONS) \
             .mapValues(lambda x: (x[0][0], x[0][1], x[0][2], x[1])) \
             .mapValues(lambda x: computer_velocity(x, squared_sigma)) \
-            # .cache()
 
         zipped_date_items = zipped_date_items \
             .join(velocities, numPartitions=NUM_PARTITIONS) \
