@@ -1,0 +1,13 @@
+gcloud dataproc clusters create multi-kmeans-cluster --bucket multi-kmeans --master-boot-disk-size 20GB --zone europe-west1-d --worker-boot-disk-size 20GB --initialization-actions gs://multi-kmeans/src/create_my_cluster.sh
+gcloud compute ssh --zone 'europe-west1-d' alexandru_cristea604@'multi-kmeans-cluster-m'
+gcloud dataproc clusters create multi-kmeans-cluster --bucket multi-kmeans --master-boot-disk-size 100GB --zone europe-west1-b --worker-boot-disk-size 100GB  --num-worker-local-ssds 1 --master-machine-type n1-standard-8 --worker-machine-type n1-standard-8 --initialization-actions gs://multi-kmeans/src/create_my_cluster.sh
+gcloud dataproc clusters create multi-kmeans-cluster \
+    --bucket multi-kmeans \
+    --master-boot-disk-size 50GB \
+    --zone europe-west1-b \
+    --worker-boot-disk-size 50GB \
+    --num-worker-local-ssds 1 \
+    --master-machine-type n1-standard-8 \
+    --worker-machine-type n1-standard-8 \
+    --num-workers 4 \
+    --initialization-actions gs://multi-kmeans/src/create_my_cluster.sh
